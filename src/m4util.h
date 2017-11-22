@@ -129,8 +129,8 @@ public:
     {
         data.resize(Yuneec::COMMAND_BODY_EXCLUDE_VALUES_LENGTH);
         std::fill(data.begin(), data.end(), 0);
-        data[2] = (uint8_t)type;
-        data[9] = (uint8_t)id;
+        data[2] = uint8_t(type);
+        data[9] = uint8_t(id);
     }
     virtual ~m4Command() {}
     std::vector<uint8_t> pack(std::vector<uint8_t> payload = std::vector<uint8_t>())
@@ -142,9 +142,9 @@ public:
         command.resize(3);
         command[0] = 0x55;
         command[1] = 0x55;
-        command[2] = (uint8_t)data.size() + 1;
+        command[2] = uint8_t(data.size()) + 1;
         command.insert(command.end(), data.begin(), data.end());
-        uint8_t crc = crc8((uint8_t*)data.data(), data.size());
+        uint8_t crc = crc8(data.data(), data.size());
         command.push_back(crc);
         return command;
     }
@@ -160,7 +160,7 @@ public:
     {
         data.resize(Yuneec::COMMAND_BODY_EXCLUDE_VALUES_LENGTH - 1);
         std::fill(data.begin(), data.end(), 0);
-        data[2] = (uint8_t)Yuneec::COMMAND_TYPE_PASS_THROUGH;
+        data[2] = uint8_t(Yuneec::COMMAND_TYPE_PASS_THROUGH);
     }
     virtual ~m4PassThroughCommand() {}
     std::vector<uint8_t> pack(std::vector<uint8_t> payload = std::vector<uint8_t>())
@@ -172,9 +172,9 @@ public:
         command.resize(3);
         command[0] = 0x55;
         command[1] = 0x55;
-        command[2] = (uint8_t)data.size() + 1;
+        command[2] = uint8_t(data.size()) + 1;
         command.insert(command.end(), data.begin(), data.end());
-        uint8_t crc = crc8((uint8_t*)data.data(), data.size());
+        uint8_t crc = crc8(data.data(), data.size());
         command.push_back(crc);
         return command;
     }
@@ -190,8 +190,8 @@ public:
     {
         data.resize(8);
         std::fill(data.begin(), data.end(), 8);
-        data[2] = (uint8_t)type;
-        data[3] = (uint8_t)id;
+        data[2] = uint8_t(type);
+        data[3] = uint8_t(id);
     }
     virtual ~m4Message() {}
     std::vector<uint8_t> pack()
@@ -200,9 +200,9 @@ public:
         command.resize(3);
         command[0] = 0x55;
         command[1] = 0x55;
-        command[2] = (uint8_t)data.size() + 1;
+        command[2] = uint8_t(data.size()) + 1;
         command.insert(command.end(), data.begin(), data.end());
-        uint8_t crc = crc8((uint8_t*)data.data(), data.size());
+        uint8_t crc = crc8(data.data(), data.size());
         command.push_back(crc);
         return command;
     }
