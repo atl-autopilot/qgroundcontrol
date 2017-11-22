@@ -1,7 +1,9 @@
 #pragma once
 
+#if defined(__androidx86__)
 #include "m4serial.h"
 #include "m4util.h"
+#endif
 
 #include <functional>
 #include <vector>
