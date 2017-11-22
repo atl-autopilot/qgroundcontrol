@@ -53,7 +53,7 @@ private:
     SerialPortState _serialPortStatus = SerialPortState::CLOSED;
     std::string     _uart_name {};
     PacketState _currentPacketStatus = PacketState::NONE;
-    struct termios  _savedtio;
+    //struct termios  _savedtio;
     std::function<void(std::vector<uint8_t>)> _bytesReadyCallback = nullptr;
 };
 
