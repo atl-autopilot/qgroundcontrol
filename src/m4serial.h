@@ -12,6 +12,7 @@
 #include <termios.h>
 #include <functional>
 #include <vector>
+#include <string>
 
 class HelperInterface;
 
