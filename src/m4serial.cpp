@@ -80,7 +80,7 @@ bool M4SerialComm::write(std::vector<uint8_t> data, bool debug)
         // TODO: fix
         //_helper.logDebug(data.toHex());
     }
-    return _writePort(data.data(), data.size()) == (int)data.size();
+    return _writePort(data.data(), data.size()) == int(data.size());
 }
 
 //-----------------------------------------------------------------------------
@@ -131,7 +131,7 @@ M4SerialComm::_readData(void *buffer, int len)
 {
     int tries = 0;
     int left  = len;
-    uint8_t* ptr = (uint8_t*)buffer;
+    uint8_t* ptr = reinterpret_cast<uint8_t*>(buffer);
     while(left > 0) {
         int count = ::read(_fd, ptr, left);
         if(count < 0 || _serialPortStatus != SerialPortState::OPEN || _fd < 0) {
@@ -159,7 +159,7 @@ M4SerialComm::_readPacket(uint8_t length)
             if(::read(_fd, &iCRC, 1) == 1) {
                 uint8_t oCRC = crc8(buffer, length);
                 if(iCRC == oCRC) {
-                    std::vector<uint8_t> data((const char*)buffer, (const char*)buffer + length);
+                    std::vector<uint8_t> data(buffer, buffer + length);
                     if (_bytesReadyCallback) {
                         _bytesReadyCallback(data);
                     }

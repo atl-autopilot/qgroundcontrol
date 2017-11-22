@@ -265,7 +265,7 @@ void
 M4Lib::enterBindMode(bool skipPairCommand)
 {
     std::stringstream ss;
-    ss << "enterBindMode() Current Mode: " << (int)_m4State;
+    ss << "enterBindMode() Current Mode: " << int(_m4State);
 
     _helper.logInfo(ss.str());
     if(!skipPairCommand) {
@@ -498,8 +498,8 @@ M4Lib::_bind(int rxAddr)
 {
     _helper.logDebug("Sending: CMD_BIND");
     m4Message bindMsg(Yuneec::CMD_BIND, Yuneec::TYPE_BIND);
-    bindMsg.data[4] = (uint8_t)(rxAddr & 0xff);
-    bindMsg.data[5] = (uint8_t)((rxAddr & 0xff00) >> 8);
+    bindMsg.data[4] = uint8_t(rxAddr & 0xff);
+    bindMsg.data[5] = uint8_t((rxAddr & 0xff00) >> 8);
     bindMsg.data[6] = 5; //-- Gotta love magic numbers
     bindMsg.data[7] = 15;
     std::vector<uint8_t> msg = bindMsg.pack();
@@ -521,8 +521,8 @@ M4Lib::_setChannelSetting()
     std::vector<uint8_t> payload;
     payload.resize(2);
     std::fill(payload.begin(), payload.end(), 0);
-    payload[0] = (uint8_t)(_rxBindInfoFeedback.aNum  & 0xff);
-    payload[1] = (uint8_t)(_rxBindInfoFeedback.swNum & 0xff);
+    payload[0] = uint8_t(_rxBindInfoFeedback.aNum  & 0xff);
+    payload[1] = uint8_t(_rxBindInfoFeedback.swNum & 0xff);
     std::vector<uint8_t> cmd = setChannelSettingCmd.pack(payload);
     return _write(cmd, DEBUG_DATA_DUMP);
 }
@@ -540,7 +540,7 @@ M4Lib::setPowerKey(int function)
     m4Command setPowerKeyCmd(Yuneec::CMD_SET_BINDKEY_FUNCTION);
     std::vector<uint8_t> payload;
     payload.resize(1);
-    payload[0] = (uint8_t)(function & 0xff);
+    payload[0] = uint8_t(function & 0xff);
     std::vector<uint8_t> cmd = setPowerKeyCmd.pack(payload);
     return _write(cmd, DEBUG_DATA_DUMP);
 }
@@ -604,8 +604,8 @@ M4Lib::_syncMixingDataAdd()
      */
     _helper.logDebug("Sending: CMD_SYNC_MIXING_DATA_ADD");
     m4Command syncMixingDataAddCmd(Yuneec::CMD_SYNC_MIXING_DATA_ADD);
-    std::vector<uint8_t> payload((const char*)&channel_data[_currentChannelAdd],
-                                 (const char*)&channel_data[_currentChannelAdd] + CHANNEL_LENGTH);
+    std::vector<uint8_t> payload(reinterpret_cast<const char*>(&channel_data[_currentChannelAdd]),
+                                 reinterpret_cast<const char*>(&channel_data[_currentChannelAdd]) + CHANNEL_LENGTH);
     std::vector<uint8_t> cmd = syncMixingDataAddCmd.pack(payload);
     return _write(cmd, DEBUG_DATA_DUMP);
 }
@@ -623,15 +623,15 @@ M4Lib::_sendTableDeviceLocalInfo(TableDeviceLocalInfo_t localInfo)
     payload.resize(len);
     std::fill(payload.begin(), payload.end(), 0);
     payload[0]  = localInfo.index;
-    payload[1]  = (uint8_t)(localInfo.mode     & 0xff);
-    payload[2]  = (uint8_t)((localInfo.mode    & 0xff00) >> 8);
-    payload[3]  = (uint8_t)(localInfo.nodeId   & 0xff);
-    payload[4]  = (uint8_t)((localInfo.nodeId  & 0xff00) >> 8);
+    payload[1]  = uint8_t(localInfo.mode     & 0xff);
+    payload[2]  = uint8_t((localInfo.mode    & 0xff00) >> 8);
+    payload[3]  = uint8_t(localInfo.nodeId   & 0xff);
+    payload[4]  = uint8_t((localInfo.nodeId  & 0xff00) >> 8);
     payload[5]  = localInfo.parseIndex;
-    payload[7]  = (uint8_t)(localInfo.panId    & 0xff);
-    payload[8]  = (uint8_t)((localInfo.panId   & 0xff00) >> 8);
-    payload[9]  = (uint8_t)(localInfo.txAddr   & 0xff);
-    payload[10] = (uint8_t)((localInfo.txAddr  & 0xff00) >> 8);
+    payload[7]  = uint8_t(localInfo.panId    & 0xff);
+    payload[8]  = uint8_t((localInfo.panId   & 0xff00) >> 8);
+    payload[9]  = uint8_t(localInfo.txAddr   & 0xff);
+    payload[10] = uint8_t((localInfo.txAddr  & 0xff00) >> 8);
     std::vector<uint8_t> cmd = sendRxResInfoCmd.pack(payload);
 #if DEBUG_DATA_DUMP==true
     std::stringstream ss;
@@ -773,10 +773,10 @@ M4Lib::_fillTableDeviceChannelNumMap(TableDeviceChannelNumInfo_t* channelNumInfo
 {
     bool res = false;
     if(num) {
-        if(num <= (int)list.size()) {
+        if(num <= int(list.size())) {
             channelNumInfo->index = _channelNumIndex;
             for(int i = 0; i < num; i++) {
-                channelNumInfo->channelMap[i] = (uint8_t)list[i];
+                channelNumInfo->channelMap[i] = uint8_t(list[i]);
             }
             res = true;
         } else {
@@ -797,7 +797,7 @@ M4Lib::_initSequence()
     if(_rxBindInfoFeedback.nodeId) {
 
         std::stringstream ss;
-        ss << "Previously bound with:" << (int)_rxBindInfoFeedback.nodeId << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
+        ss << "Previously bound with:" << int(_rxBindInfoFeedback.nodeId) << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
         _helper.logInfo(ss.str()) ;
         //-- Initialize M4
         _state = STATE_RECV_BOTH_CH;
@@ -1102,7 +1102,7 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
     }
     switch(type) {
         case Yuneec::TYPE_BIND:
-            switch((uint8_t)data[3]) {
+            switch(uint8_t(data[3])) {
                 case 2:
                     _handleRxBindInfo(packet);
                     break;
@@ -1365,42 +1365,42 @@ M4Lib::_handleRxBindInfo(m4Packet& packet)
         //ss << dumpDataPacket(packet.data);
         //_helper.logDebug(ss.str());
         _timer.stop();
-        _rxBindInfoFeedback.mode     = ((uint8_t)packet.data[6]  & 0xff) | ((uint8_t)packet.data[7]  << 8 & 0xff00);
-        _rxBindInfoFeedback.panId    = ((uint8_t)packet.data[8]  & 0xff) | ((uint8_t)packet.data[9]  << 8 & 0xff00);
-        _rxBindInfoFeedback.nodeId   = ((uint8_t)packet.data[10] & 0xff) | ((uint8_t)packet.data[11] << 8 & 0xff00);
-        _rxBindInfoFeedback.aNum     = (uint8_t)packet.data[20];
-        _rxBindInfoFeedback.aBit     = (uint8_t)packet.data[21];
-        _rxBindInfoFeedback.trNum    = (uint8_t)packet.data[22];
-        _rxBindInfoFeedback.trBit    = (uint8_t)packet.data[23];
-        _rxBindInfoFeedback.swNum    = (uint8_t)packet.data[24];
-        _rxBindInfoFeedback.swBit    = (uint8_t)packet.data[25];
-        _rxBindInfoFeedback.monitNum = (uint8_t)packet.data[26];
-        _rxBindInfoFeedback.monitBit = (uint8_t)packet.data[27];
-        _rxBindInfoFeedback.extraNum = (uint8_t)packet.data[28];
-        _rxBindInfoFeedback.extraBit = (uint8_t)packet.data[29];
+        _rxBindInfoFeedback.mode     = (uint8_t(packet.data[6])  & 0xff) | (uint8_t(packet.data[7])  << 8 & 0xff00);
+        _rxBindInfoFeedback.panId    = (uint8_t(packet.data[8])  & 0xff) | (uint8_t(packet.data[9])  << 8 & 0xff00);
+        _rxBindInfoFeedback.nodeId   = (uint8_t(packet.data[10]) & 0xff) | (uint8_t(packet.data[11]) << 8 & 0xff00);
+        _rxBindInfoFeedback.aNum     = uint8_t(packet.data[20]);
+        _rxBindInfoFeedback.aBit     = uint8_t(packet.data[21]);
+        _rxBindInfoFeedback.trNum    = uint8_t(packet.data[22]);
+        _rxBindInfoFeedback.trBit    = uint8_t(packet.data[23]);
+        _rxBindInfoFeedback.swNum    = uint8_t(packet.data[24]);
+        _rxBindInfoFeedback.swBit    = uint8_t(packet.data[25]);
+        _rxBindInfoFeedback.monitNum = uint8_t(packet.data[26]);
+        _rxBindInfoFeedback.monitBit = uint8_t(packet.data[27]);
+        _rxBindInfoFeedback.extraNum = uint8_t(packet.data[28]);
+        _rxBindInfoFeedback.extraBit = uint8_t(packet.data[29]);
         int ilen = 30;
         _rxBindInfoFeedback.achName.clear();
         for(int i = 0; i < _rxBindInfoFeedback.aNum ; i++) {
-            _rxBindInfoFeedback.achName.push_back((uint8_t)packet.data[ilen++]);
+            _rxBindInfoFeedback.achName.push_back(uint8_t(packet.data[ilen++]));
         }
         _rxBindInfoFeedback.trName.clear();
         for(int i = 0; i < _rxBindInfoFeedback.trNum ; i++) {
-            _rxBindInfoFeedback.trName.push_back((uint8_t)packet.data[ilen++]);
+            _rxBindInfoFeedback.trName.push_back(uint8_t(packet.data[ilen++]));
         }
         _rxBindInfoFeedback.swName.clear();
         for(int i = 0; i < _rxBindInfoFeedback.swNum ; i++) {
-            _rxBindInfoFeedback.swName.push_back((uint8_t)packet.data[ilen++]);
+            _rxBindInfoFeedback.swName.push_back(uint8_t(packet.data[ilen++]));
         }
         _rxBindInfoFeedback.monitName.clear();
         for(int i = 0; i < _rxBindInfoFeedback.monitNum ; i++) {
-            _rxBindInfoFeedback.monitName.push_back((uint8_t)packet.data[ilen++]);
+            _rxBindInfoFeedback.monitName.push_back(uint8_t(packet.data[ilen++]));
         }
         _rxBindInfoFeedback.extraName.clear();
         for(int i = 0; i < _rxBindInfoFeedback.extraNum ; i++) {
-            _rxBindInfoFeedback.extraName.push_back((uint8_t)packet.data[ilen++]);
+            _rxBindInfoFeedback.extraName.push_back(uint8_t(packet.data[ilen++]));
         }
         int p = packet.data.size() - 2;
-        _rxBindInfoFeedback.txAddr = ((uint8_t)packet.data[p] & 0xff) | ((uint8_t)packet.data[p + 1] << 8 & 0xff00);
+        _rxBindInfoFeedback.txAddr = (uint8_t(packet.data[p]) & 0xff) | (uint8_t(packet.data[p + 1]) << 8 & 0xff00);
         std::stringstream ss;
         ss << "RxBindInfo:" << _getRxBindInfoFeedbackName() << _rxBindInfoFeedback.nodeId;
         _helper.logDebug(ss.str());
@@ -1455,7 +1455,7 @@ M4Lib::_handleCommand(m4Packet& packet)
     switch(packet.commandID()) {
         case Yuneec::CMD_TX_STATE_MACHINE: {
                 std::vector<uint8_t> commandValues = packet.commandValues();
-                M4State state = (M4State)(commandValues[0] & 0x1f);
+                M4State state = M4State(commandValues[0] & 0x1f);
                 if(state != _m4State) {
                     M4State old_state = _m4State;
                     _m4State = state;
@@ -1463,7 +1463,7 @@ M4Lib::_handleCommand(m4Packet& packet)
                         _m4StateChangedCallback();
                     }
                     std::stringstream ss;
-                    ss << "New State:" << m4StateStr() << "(" << (int)_m4State << ")";
+                    ss << "New State:" << m4StateStr() << "(" << int(_m4State) << ")";
                     _helper.logDebug(ss.str());
                     //-- If we were connected and just finished calibration, bind again
                     if(_vehicleConnected && old_state == M4State::FACTORY_CAL) {
@@ -1493,8 +1493,8 @@ M4Lib::_switchChanged(m4Packet& packet)
 {
     std::vector<uint8_t> commandValues = packet.commandValues();
     SwitchChanged switchChanged;
-    switchChanged.hwId      = (int)commandValues[0];
-    switchChanged.newState  = (int)commandValues[2]; // This was previously mixed up with oldState
+    switchChanged.hwId      = int(commandValues[0]);
+    switchChanged.newState  = int(commandValues[2]); // This was previously mixed up with oldState
     //switchChanged.oldState  = (int)commandValues[1]; // Unused.
 
     switch (switchChanged.hwId) {
@@ -1573,7 +1573,7 @@ M4Lib::_calibrationStateChanged(m4Packet &packet)
         //if ((int)commandValues[i] != TyphoonHQuickInterface::CalibrationStateRag) {
         // TODO: we don't want to depend on TyphoonHQuickInterface::CalibrationStateRag, so we just
         //       copy the value over and hardcode it here.
-        if ((int)commandValues[i] != 4) {
+        if (int(commandValues[i]) != 4) {
             state = false;
         }
     }
@@ -1609,7 +1609,7 @@ M4Lib::_handleRawChannelData(m4Packet& packet)
     _rawChannels.clear();
     for(int i = 0; i < analogChannelCount; i++) {
         uint16_t value = 0;
-        startIndex = (int)std::floor(i * 1.5);
+        startIndex = int(std::floor(i * 1.5));
         val1 = values[startIndex] & 0xff;
         val2 = values[startIndex + 1] & 0xff;
         if(i % 2 == 0) {
@@ -1687,9 +1687,9 @@ M4Lib::_handleControllerFeedback(m4Packet& packet)
     int ilat = _byteArrayToInt(commandValues, 0);
     int ilon = _byteArrayToInt(commandValues, 4);
     int ialt = _byteArrayToInt(commandValues, 8);
-    _controllerLocation.latitude     = (double)ilat / 1e7;
-    _controllerLocation.longitude    = (double)ilon / 1e7;
-    _controllerLocation.altitude     = (double)ialt / 1e7;
+    _controllerLocation.latitude     = double(ilat) / 1e7;
+    _controllerLocation.longitude    = double(ilon) / 1e7;
+    _controllerLocation.altitude     = double(ialt) / 1e7;
     _controllerLocation.accuracy     = _byteArrayToShort(commandValues, 12);
     _controllerLocation.speed        = _byteArrayToShort(commandValues, 14);
     _controllerLocation.angle        = _byteArrayToShort(commandValues, 16);
@@ -1737,7 +1737,7 @@ int
 M4Lib::_byteArrayToInt(std::vector<uint8_t> data, int offset, bool isBigEndian)
 {
     int iRetVal = -1;
-    if((int)data.size() < offset + 4) {
+    if(int(data.size()) < offset + 4) {
         return iRetVal;
     }
     int iLowest;
@@ -1763,7 +1763,7 @@ short
 M4Lib::_byteArrayToShort(std::vector<uint8_t> data, int offset, bool isBigEndian)
 {
     short iRetVal = -1;
-    if((int)data.size() < offset + 2) {
+    if(int(data.size()) < offset + 2) {
         return iRetVal;
     }
     int iLow;
@@ -1807,7 +1807,7 @@ std::string M4Lib::_getRxBindInfoFeedbackName()
         default:
             if (_rxBindInfoFeedback.mode >= 105) {
                 std::stringstream modeSs;
-                modeSs << (float)_rxBindInfoFeedback.mode / 100.0f;
+                modeSs << float(_rxBindInfoFeedback.mode) / 100.0f;
                 return std::string("SR24S_") + nodeSs.str() + std::string("v") + modeSs.str();
             } else {
                 return nodeSs.str();
