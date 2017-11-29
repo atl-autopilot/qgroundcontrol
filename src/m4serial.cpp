@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <cstring>
 #include <sstream>
 
 
@@ -193,7 +194,7 @@ bool
 M4SerialComm::_setupPort(int baud)
 {
     struct termios config;
-    memset(&config, 0, sizeof(config));
+    std::memset(&config, 0, sizeof(config));
     config.c_cflag |= (CS8 | CLOCAL | CREAD);
     config.c_cc[VMIN]  = 1;
     config.c_cc[VTIME] = 5;
