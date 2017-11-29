@@ -174,6 +174,7 @@ public:
     void resetBind();
     void enterBindMode(bool skipPairCommand = false);
 
+    bool isVehicleReady();
     void checkVehicleReady();
     void tryStartCalibration();
     void tryStopCalibration();

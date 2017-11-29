@@ -295,6 +295,13 @@ M4Lib::_tryEnterBindMode()
     _initSequence();
 }
 
+bool
+M4Lib::isVehicleReady()
+{
+    // This is a helper function to determine if we need to run isVehicleRead().
+    return (_m4State == M4State::RUN && _rcActive);
+}
+
 void
 M4Lib::checkVehicleReady()
 {
