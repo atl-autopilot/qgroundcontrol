@@ -6,6 +6,7 @@
 
 #if defined(__androidx86__)
 
+#include <cstring>
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -71,7 +72,7 @@ M4Lib::M4Lib(TimerInterface& timer, HelperInterface& helper)
     _channelNumIndex    = 6;
 
     _timer.setCallback(std::bind(&M4Lib::_stateManager, this));
-    memset(_rawChannelsCalibration, 0, sizeof(_rawChannelsCalibration));
+    std::memset(_rawChannelsCalibration, 0, sizeof(_rawChannelsCalibration));
 }
 
 M4Lib::~M4Lib()
@@ -324,7 +325,7 @@ M4Lib::tryStartCalibration()
 {
     //-- Ignore it if already in factory cal mode
     if(_m4State != M4State::FACTORY_CAL) {
-        memset(_rawChannelsCalibration, 0, sizeof(_rawChannelsCalibration));
+        std::memset(_rawChannelsCalibration, 0, sizeof(_rawChannelsCalibration));
         _rcCalibrationComplete = false;
         if (_calibrationCompleteChangedCallback) {
             _calibrationCompleteChangedCallback();
@@ -376,7 +377,6 @@ M4Lib::softReboot()
     _softReboot = true;
 #endif
 }
-
 
 /**
  * Exit to Await (?)
@@ -698,7 +698,7 @@ bool
 M4Lib::_sendTableDeviceChannelNumInfo(ChannelNumType_t channelNumType)
 {
     TableDeviceChannelNumInfo_t channelNumInfo;
-    memset(&channelNumInfo, 0, sizeof(TableDeviceChannelNumInfo_t));
+    std::memset(&channelNumInfo, 0, sizeof(TableDeviceChannelNumInfo_t));
     int num =  0;
     if(_generateTableDeviceChannelNumInfo(&channelNumInfo, channelNumType, num)) {
         m4Command sendRxResInfoCmd(Yuneec::CMD_SEND_RX_RESINFO);
@@ -975,9 +975,9 @@ M4Lib::_sendRxResInfo()
 {
     _sendRxInfoEnd = false;
     TableDeviceChannelInfo_t channelInfo ;
-    memset(&channelInfo, 0, sizeof(TableDeviceChannelInfo_t));
+    std::memset(&channelInfo, 0, sizeof(TableDeviceChannelInfo_t));
     TableDeviceLocalInfo_t localInfo;
-    memset(&localInfo, 0, sizeof(TableDeviceLocalInfo_t));
+    std::memset(&localInfo, 0, sizeof(TableDeviceLocalInfo_t));
     if(!_generateTableDeviceChannelInfo(&channelInfo)) {
         return _sendRxInfoEnd;
     }
