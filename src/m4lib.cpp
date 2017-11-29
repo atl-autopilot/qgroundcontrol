@@ -1514,13 +1514,13 @@ M4Lib::_switchChanged(m4Packet& packet)
             if (_switchStateChangedCallback) {
                 //-- On is position 3 (index 2)
                 if (switchChanged.newState == 2) {
-                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDENCE, SwitchState::ON);
+                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::ON);
                     _helper.logDebug("Obstacle avoidance switch on");
                 } else if (switchChanged.newState == 1) {
-                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDENCE, SwitchState::CENTER);
+                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::CENTER);
                     _helper.logDebug("Obstacle avoidance switch center");
                 } else {
-                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDENCE, SwitchState::OFF);
+                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::OFF);
                     _helper.logDebug("Obstacle avoidance switch off");
                 }
             }

@@ -113,7 +113,7 @@ public:
     };
 
     enum class SwitchId {
-        OBSTACLE_AVOIDENCE,
+        OBSTACLE_AVOIDANCE
     };
 
     enum class SwitchState {
