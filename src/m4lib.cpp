@@ -1506,6 +1506,36 @@ M4Lib::_switchChanged(m4Packet& packet)
     //switchChanged.oldState  = (int)commandValues[1]; // Unused.
 
     switch (switchChanged.hwId) {
+        case Yuneec::SWITCH_OBS:
+            if (_switchStateChangedCallback) {
+                //-- On is position 3 (index 2)
+                if (switchChanged.newState == 2) {
+                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::ON);
+                    _helper.logDebug("Obstacle avoidance switch on");
+                } else if (switchChanged.newState == 1) {
+                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::CENTER);
+                    _helper.logDebug("Obstacle avoidance switch center");
+                } else {
+                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::OFF);
+                    _helper.logDebug("Obstacle avoidance switch off");
+                }
+            }
+            break;
+        case Yuneec::SWITCH_MODE:
+            if (_switchStateChangedCallback) {
+                //-- On is position 3 (index 2)
+                if (switchChanged.newState == 2) {
+                    _switchStateChangedCallback(SwitchId::FLIGHT_MODE, SwitchState::ON);
+                    _helper.logDebug("Flight mode switch on");
+                } else if (switchChanged.newState == 1) {
+                    _switchStateChangedCallback(SwitchId::FLIGHT_MODE, SwitchState::CENTER);
+                    _helper.logDebug("Flight mode switch center");
+                } else {
+                    _switchStateChangedCallback(SwitchId::FLIGHT_MODE, SwitchState::OFF);
+                    _helper.logDebug("Flight mode switch off");
+                }
+            }
+            break;
         case Yuneec::BUTTON_POWER:
             if (_buttonStateChangedCallback) {
                 //-- Pressed is 0
@@ -1518,18 +1548,15 @@ M4Lib::_switchChanged(m4Packet& packet)
                 }
             }
             break;
-        case Yuneec::BUTTON_OBS:
-            if (_switchStateChangedCallback) {
-                //-- On is position 3 (index 2)
-                if (switchChanged.newState == 2) {
-                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::ON);
-                    _helper.logDebug("Obstacle avoidance switch on");
-                } else if (switchChanged.newState == 1) {
-                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::CENTER);
-                    _helper.logDebug("Obstacle avoidance switch center");
+        case Yuneec::BUTTON_AUX:
+            if (_buttonStateChangedCallback) {
+                //-- Pressed is 0
+                if (switchChanged.newState == 0) {
+                    _buttonStateChangedCallback(ButtonId::AUX, ButtonState::PRESSED);
+                    _helper.logDebug("Aux button pressed");
                 } else {
-                    _switchStateChangedCallback(SwitchId::OBSTACLE_AVOIDANCE, SwitchState::OFF);
-                    _helper.logDebug("Obstacle avoidance switch off");
+                    _buttonStateChangedCallback(ButtonId::AUX, ButtonState::NORMAL);
+                    _helper.logDebug("Aux button normal");
                 }
             }
             break;

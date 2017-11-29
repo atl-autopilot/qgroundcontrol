@@ -113,6 +113,7 @@ public:
     };
 
     enum class SwitchId {
+        FLIGHT_MODE,
         OBSTACLE_AVOIDANCE
     };
 
@@ -124,6 +125,7 @@ public:
 
     enum class ButtonId {
         POWER,
+        AUX,
         CAMERA_SHUTTER,
         VIDEO_SHUTTER,
     };
