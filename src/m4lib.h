@@ -80,36 +80,36 @@ public:
 
     struct ControllerLocation {
         /**
-         * Longitude of remote-controller
+         * Longitude in degrees [-180..180]
          */
         double longitude = 0.0;
         /**
-         * Latitude of remote-controller
+         * Latitude in degrees [-90..90]
          */
         double latitude = 0.0;
         /**
-         * Altitude of remote-controller
+         * Altitude of remote-controller above mean sea level (AMSL) in meters.
          */
         double altitude = 0.0;
         /**
-         * The number of satellite has searched
+         * The number of satellite used for navigation solution.
          */
         int satelliteCount = 0;
 
         /**
-         * Accuracy of remote-controller
+         * Position dilution of precision of navigation solution (unitless).
          */
-        float accuracy = 0.0f;
+        float pdop = 0.0f;
 
         /**
-         * Speed of remote-controller
+         * Speed of remote-controller (uBlox ground speed in meters/second).
          */
         float speed = 0.0f;
 
         /**
-         * Angle of remote-controller
+         * Heading of movement of remote-controller in degrees [-180..180].
          */
-        float angle = 0.0f;
+        float heading = 0.0f;
     };
 
     enum class SwitchId {

@@ -1698,9 +1698,14 @@ M4Lib::_handleControllerFeedback(m4Packet& packet)
     _controllerLocation.latitude     = double(ilat) / 1e7;
     _controllerLocation.longitude    = double(ilon) / 1e7;
     _controllerLocation.altitude     = double(ialt) / 1e7;
-    _controllerLocation.accuracy     = _byteArrayToShort(commandValues, 12);
-    _controllerLocation.speed        = _byteArrayToShort(commandValues, 14);
-    _controllerLocation.angle        = _byteArrayToShort(commandValues, 16);
+     // The uBlox NAV-PVT value has precision 0.01 and this value is /10 in the driver.
+     // We /10 again to get the unitless actual number.
+    _controllerLocation.pdop         = float(_byteArrayToShort(commandValues, 12))/10.0f;
+    // The uBlox NAV-PVT value is in mm/s which is /100 in the driver.
+    // We /10 to get m/s.
+    _controllerLocation.speed        = float(_byteArrayToShort(commandValues, 14))/10.0f;
+    // The uBloxk NAV-PVT value is in 1e-5 degrees which is converted to -180..180 degrees in driver.
+    _controllerLocation.heading      = _byteArrayToShort(commandValues, 16);
     _controllerLocation.satelliteCount = commandValues[18] & 0x1f;
     if (_controllerLocationChangedCallback) {
         _controllerLocationChangedCallback();
