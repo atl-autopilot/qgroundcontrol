@@ -248,23 +248,23 @@ private:
     TimerInterface& _timer;
     HelperInterface& _helper;
 
-    enum {
-        STATE_NONE,
-        STATE_ENTER_BIND_ERROR,
-        STATE_EXIT_RUN,
-        STATE_ENTER_BIND,
-        STATE_START_BIND,
-        STATE_UNBIND,
-        STATE_BIND,
-        STATE_QUERY_BIND,
-        STATE_EXIT_BIND,
-        STATE_RECV_BOTH_CH,
-        STATE_SET_CHANNEL_SETTINGS,
-        STATE_MIX_CHANNEL_DELETE,
-        STATE_MIX_CHANNEL_ADD,
-        STATE_SEND_RX_INFO,
-        STATE_ENTER_RUN,
-        STATE_RUNNING
+    enum InternalM4State {
+        NONE,
+        ENTER_BIND_ERROR,
+        EXIT_RUN,
+        ENTER_BIND,
+        START_BIND,
+        UNBIND,
+        BIND,
+        QUERY_BIND,
+        EXIT_BIND,
+        RECV_BOTH_CH,
+        SET_CHANNEL_SETTINGS,
+        MIX_CHANNEL_DELETE,
+        MIX_CHANNEL_ADD,
+        SEND_RX_INFO,
+        ENTER_RUN,
+        RUNNING
     };
 
     std::function<void()>   _pairCommandCallback = nullptr;
@@ -278,9 +278,9 @@ private:
     std::function<void()> _m4StateChangedCallback = nullptr;
     std::function<void(const RxBindInfo&)> _saveSettingsCallback = nullptr;
 
-    int                     _state;
     int                     _responseTryCount;
     M4State                 _m4State;
+    InternalM4State         _internalM4State;
     uint8_t                 _channelNumIndex;
     RxBindInfo              _rxBindInfoFeedback;
     int                     _currentChannelAdd;

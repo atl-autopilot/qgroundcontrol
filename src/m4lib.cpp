@@ -53,9 +53,9 @@ toHex(std::vector<uint8_t> data)
 M4Lib::M4Lib(TimerInterface& timer, HelperInterface& helper)
     : _timer(timer)
     , _helper(helper)
-    , _state(STATE_NONE)
     , _responseTryCount(0)
     , _m4State(M4State::NONE)
+    , _internalM4State(InternalM4State::NONE)
     , _currentChannelAdd(0)
     , _rxLocalIndex(0)
     , _sendRxInfoEnd(false)
@@ -76,7 +76,7 @@ M4Lib::M4Lib(TimerInterface& timer, HelperInterface& helper)
 
 M4Lib::~M4Lib()
 {
-    _state = STATE_NONE;
+    _internalM4State = InternalM4State::NONE;
     _exitRun();
     _helper.msleep(SEND_INTERVAL);
     setPowerKey(Yuneec::BIND_KEY_FUNCTION_PWR);
@@ -359,7 +359,7 @@ M4Lib::softReboot()
     } else {
         deinit();
         _helper.msleep(SEND_INTERVAL);
-        _state              = STATE_NONE;
+        _internalM4State    = InternalM4State::NONE;
         _responseTryCount   = 0;
         _currentChannelAdd  = 0;
         _m4State            = M4State::NONE;
@@ -807,12 +807,12 @@ M4Lib::_initSequence()
         ss << "Previously bound with:" << int(_rxBindInfoFeedback.nodeId) << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
         _helper.logInfo(ss.str()) ;
         //-- Initialize M4
-        _state = STATE_RECV_BOTH_CH;
+        _internalM4State = InternalM4State::RECV_BOTH_CH;
         _sendRecvBothCh();
     } else {
         //-- First run. Start binding sequence
         _responseTryCount = 0;
-        _state = STATE_ENTER_BIND;
+        _internalM4State = InternalM4State::ENTER_BIND;
         _enterBind();
     }
     _timer.start(COMMAND_WAIT_INTERVAL);
@@ -827,8 +827,8 @@ M4Lib::_initSequence()
 void
 M4Lib::_stateManager()
 {
-    switch(_state) {
-        case STATE_EXIT_RUN:
+    switch(_internalM4State) {
+        case InternalM4State::EXIT_RUN:
             _helper.logInfo("STATE_EXIT_RUN Timeout");
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logWarn("Too many STATE_EXIT_RUN Timeouts. Switching to initial run.");
@@ -839,19 +839,19 @@ M4Lib::_stateManager()
                 _responseTryCount++;
             }
             break;
-        case STATE_ENTER_BIND:
+        case InternalM4State::ENTER_BIND:
             _helper.logInfo("STATE_ENTER_BIND Timeout");
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logWarn("Too many STATE_ENTER_BIND Timeouts.");
                 if(_rxBindInfoFeedback.nodeId) {
                     _responseTryCount = 0;
-                    _state = STATE_SEND_RX_INFO;
+                    _internalM4State = InternalM4State::SEND_RX_INFO;
                     _sendRxResInfo();
                     _timer.start(COMMAND_WAIT_INTERVAL);
                 } else {
                     //-- We're stuck. Wen can't enter bind and we have no binding info.
                     _helper.logError("Cannot enter binding mode");
-                    _state = STATE_ENTER_BIND_ERROR;
+                    _internalM4State = InternalM4State::ENTER_BIND_ERROR;
                 }
             } else {
                 _enterBind();
@@ -859,11 +859,12 @@ M4Lib::_stateManager()
                 _responseTryCount++;
             }
             break;
-        case STATE_START_BIND:
+        case InternalM4State::START_BIND:
             _helper.logInfo("STATE_START_BIND Timeout");
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logError("Too many STATE_START_BIND Timeouts. Giving up...");
-                _state = STATE_EXIT_BIND;
+
+                _internalM4State = InternalM4State::EXIT_BIND;
                 _exitBind();
                 _timer.start(COMMAND_WAIT_INTERVAL);
                 _responseTryCount = 0;
@@ -874,12 +875,12 @@ M4Lib::_stateManager()
                 _responseTryCount++;
             }
             break;
-        case STATE_UNBIND:
+        case InternalM4State::UNBIND:
             _helper.logInfo("STATE_UNBIND Timeout");
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logWarn("Too many STATE_UNBIND Timeouts. Go straight to bind.");
                 _responseTryCount = 0;
-                _state = STATE_BIND;
+                _internalM4State = InternalM4State::BIND;
                 _bind(_rxBindInfoFeedback.nodeId);
                 _timer.start(COMMAND_WAIT_INTERVAL);
             } else {
@@ -888,25 +889,25 @@ M4Lib::_stateManager()
                 _responseTryCount++;
             }
             break;
-        case STATE_BIND:
+        case InternalM4State::BIND:
             _helper.logInfo("STATE_BIND Timeout");
             _bind(_rxBindInfoFeedback.nodeId);
             _timer.start(COMMAND_WAIT_INTERVAL);
             //-- TODO: This can't wait for ever...
             break;
-        case STATE_QUERY_BIND:
+        case InternalM4State::QUERY_BIND:
             _helper.logInfo("STATE_QUERY_BIND Timeout");
             _queryBindState();
             _timer.start(COMMAND_WAIT_INTERVAL);
             //-- TODO: This can't wait for ever...
             break;
-        case STATE_EXIT_BIND:
+        case InternalM4State::EXIT_BIND:
             _helper.logInfo("STATE_EXIT_BIND Timeout");
             _exitBind();
             _timer.start(COMMAND_WAIT_INTERVAL);
             //-- TODO: This can't wait for ever...
             break;
-        case STATE_RECV_BOTH_CH:
+        case InternalM4State::RECV_BOTH_CH:
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logWarn("Too many STATE_RECV_BOTH_CH Timeouts. Giving up...");
             } else {
@@ -916,27 +917,27 @@ M4Lib::_stateManager()
                 _responseTryCount++;
             }
             break;
-        case STATE_SET_CHANNEL_SETTINGS:
+        case InternalM4State::SET_CHANNEL_SETTINGS:
             _helper.logInfo("STATE_SET_CHANNEL_SETTINGS Timeout");
             _setChannelSetting();
             _timer.start(COMMAND_WAIT_INTERVAL);
             //-- TODO: This can't wait for ever...
             break;
-        case STATE_MIX_CHANNEL_DELETE:
+        case InternalM4State::MIX_CHANNEL_DELETE:
             _helper.logInfo("STATE_MIX_CHANNEL_DELETE Timeout");
             _syncMixingDataDeleteAll();
             _timer.start(COMMAND_WAIT_INTERVAL);
             //-- TODO: This can't wait for ever...
             break;
-        case STATE_MIX_CHANNEL_ADD:
+        case InternalM4State::MIX_CHANNEL_ADD:
             _helper.logInfo("STATE_MIX_CHANNEL_ADD Timeout");
             //-- We need to delete and send again
-            _state = STATE_MIX_CHANNEL_DELETE;
+            _internalM4State = InternalM4State::MIX_CHANNEL_DELETE;
             _syncMixingDataDeleteAll();
             _timer.start(COMMAND_WAIT_INTERVAL);
             //-- TODO: This can't wait for ever...
             break;
-        case STATE_SEND_RX_INFO:
+        case InternalM4State::SEND_RX_INFO:
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logWarn("Too many STATE_SEND_RX_INFO Timeouts. Giving up...");
             } else {
@@ -946,7 +947,7 @@ M4Lib::_stateManager()
                 _responseTryCount++;
             }
             break;
-        case STATE_ENTER_RUN:
+        case InternalM4State::ENTER_RUN:
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logWarn("Too many STATE_ENTER_RUN Timeouts. Giving up...");
             } else {
@@ -958,7 +959,7 @@ M4Lib::_stateManager()
             break;
         default:
             std::stringstream ss;
-            ss << "Timeout:" << _state;
+            ss << "Timeout:" << _internalM4State;
             _helper.logDebug(ss.str()) ;
             break;
     }
@@ -1139,7 +1140,7 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_EXIT_RUN:
                     //-- Response from _exitRun()
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_RUN");
-                    if(_state == STATE_EXIT_RUN) {
+                    if(_internalM4State == InternalM4State::EXIT_RUN) {
                         //-- Now we start initsequence
                         _initSequence();
                     }
@@ -1147,18 +1148,18 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_ENTER_BIND:
                     //-- Response from _enterBind()
                     _helper.logDebug("Received TYPE_RSP: CMD_ENTER_BIND");
-                    if(_state == STATE_ENTER_BIND) {
+                    if(_internalM4State == InternalM4State::ENTER_BIND) {
                         //-- Now we start scanning
                         _responseTryCount = 0;
-                        _state = STATE_START_BIND;
+                        _internalM4State = InternalM4State::START_BIND;
                         _startBind();
                         _timer.start(COMMAND_WAIT_INTERVAL);
                     }
                     break;
                 case Yuneec::CMD_UNBIND:
                     _helper.logDebug("Received TYPE_RSP: CMD_UNBIND");
-                    if(_state == STATE_UNBIND) {
-                        _state = STATE_BIND;
+                    if(_internalM4State == InternalM4State::UNBIND) {
+                        _internalM4State = InternalM4State::BIND;
                         _bind(_rxBindInfoFeedback.nodeId);
                         _timer.start(COMMAND_WAIT_INTERVAL);
                     }
@@ -1166,9 +1167,9 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_EXIT_BIND:
                     //-- Response from _exitBind()
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_BIND");
-                    if(_state == STATE_EXIT_BIND) {
+                    if(_internalM4State == InternalM4State::EXIT_BIND) {
                         _responseTryCount = 0;
-                        _state = STATE_RECV_BOTH_CH;
+                        _internalM4State = InternalM4State::RECV_BOTH_CH;
                         _sendRecvBothCh();
                         _timer.start(COMMAND_WAIT_INTERVAL);
                     }
@@ -1176,8 +1177,8 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_RECV_BOTH_CH:
                     //-- Response from _sendRecvBothCh()
                     _helper.logDebug("Received TYPE_RSP: CMD_RECV_BOTH_CH");
-                    if(_state == STATE_RECV_BOTH_CH) {
-                        _state = STATE_SET_CHANNEL_SETTINGS;
+                    if(_internalM4State == InternalM4State::RECV_BOTH_CH) {
+                        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
                         _setChannelSetting();
                         _timer.start(COMMAND_WAIT_INTERVAL);
                     }
@@ -1185,8 +1186,8 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_SET_CHANNEL_SETTING:
                     //-- Response from _setChannelSetting()
                     _helper.logDebug("Received TYPE_RSP: CMD_SET_CHANNEL_SETTING");
-                    if(_state == STATE_SET_CHANNEL_SETTINGS) {
-                        _state = STATE_MIX_CHANNEL_DELETE;
+                    if(_internalM4State == InternalM4State::SET_CHANNEL_SETTINGS) {
+                        _internalM4State = InternalM4State::MIX_CHANNEL_DELETE;
                         _syncMixingDataDeleteAll();
                         _timer.start(COMMAND_WAIT_INTERVAL);
                     }
@@ -1194,8 +1195,8 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_SYNC_MIXING_DATA_DELETE_ALL:
                     //-- Response from _syncMixingDataDeleteAll()
                     _helper.logDebug("Received TYPE_RSP: CMD_SYNC_MIXING_DATA_DELETE_ALL");
-                    if(_state == STATE_MIX_CHANNEL_DELETE) {
-                        _state = STATE_MIX_CHANNEL_ADD;
+                    if(_internalM4State == InternalM4State::MIX_CHANNEL_DELETE) {
+                        _internalM4State = InternalM4State::MIX_CHANNEL_ADD;
                         _currentChannelAdd = 0;
                         _syncMixingDataAdd();
                         _timer.start(COMMAND_WAIT_INTERVAL);
@@ -1206,14 +1207,14 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                         std::stringstream ss;
                         ss  << "Received TYPE_RSP: CMD_SYNC_MIXING_DATA_ADD" << _currentChannelAdd;
                         _helper.logDebug(ss.str());
-                        if(_state == STATE_MIX_CHANNEL_ADD) {
+                        if(_internalM4State == InternalM4State::MIX_CHANNEL_ADD) {
                             _currentChannelAdd++;
                             if(_currentChannelAdd < NUM_CHANNELS) {
                                 _syncMixingDataAdd();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
                             } else {
                                 _responseTryCount = 0;
-                                _state = STATE_SEND_RX_INFO;
+                                _internalM4State = InternalM4State::SEND_RX_INFO;
                                 _sendRxResInfo();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
                             }
@@ -1222,9 +1223,9 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                     break;
                 case Yuneec::CMD_SEND_RX_RESINFO:
                     //-- Response from _sendRxResInfo()
-                    if(_state == STATE_SEND_RX_INFO && _sendRxInfoEnd) {
+                    if(_internalM4State == InternalM4State::SEND_RX_INFO && _sendRxInfoEnd) {
                         _helper.logDebug("Received TYPE_RSP: CMD_SEND_RX_RESINFO");
-                        _state = STATE_ENTER_RUN;
+                        _internalM4State = InternalM4State::ENTER_RUN;
                         _responseTryCount = 0;
                         _enterRun();
                         _timer.start(COMMAND_WAIT_INTERVAL);
@@ -1234,10 +1235,10 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                         //-- Response from _enterRun()
                         _helper.logDebug("Received TYPE_RSP: CMD_ENTER_RUN");
                         std::stringstream ss;
-                        ss << "State: " << int(_state);
+                        ss << "State: " << int(_internalM4State);
                         _helper.logDebug(ss.str());
-                        if(_state == STATE_ENTER_RUN) {
-                            _state = STATE_RUNNING;
+                        if(_internalM4State == InternalM4State::ENTER_RUN) {
+                            _internalM4State = InternalM4State::RUNNING;
                             _timer.stop();
                             if(_binding) {
                                 _binding = false;
@@ -1294,13 +1295,13 @@ M4Lib::_handleQueryBindResponse(std::vector<uint8_t> data)
         ss << "Received TYPE_RSP: CMD_QUERY_BIND_STATE" << nodeID << " -- " << _getRxBindInfoFeedbackName();
         _helper.logDebug(ss.str());
     }
-    if(_state == STATE_QUERY_BIND) {
+    if(_internalM4State == InternalM4State::QUERY_BIND) {
         if(nodeID == _rxBindInfoFeedback.nodeId) {
             _timer.stop();
             std::stringstream ss;
             ss << "Switched to BOUND state with:" << _getRxBindInfoFeedbackName();
             _helper.logDebug(ss.str());
-            _state = STATE_EXIT_BIND;
+            _internalM4State = InternalM4State::EXIT_BIND;
             _exitBind();
             if (_saveSettingsCallback) {
                 _saveSettingsCallback(_rxBindInfoFeedback);
@@ -1330,9 +1331,9 @@ void
 M4Lib::_handleBindResponse()
 {
     _helper.logDebug("Received TYPE_BIND: BIND Response");
-    if(_state == STATE_BIND) {
+    if(_internalM4State == InternalM4State::BIND) {
         _timer.stop();
-        _state = STATE_QUERY_BIND;
+        _internalM4State = InternalM4State::QUERY_BIND;
         _queryBindState();
         _timer.start(COMMAND_WAIT_INTERVAL);
     }
@@ -1366,7 +1367,7 @@ M4Lib::_handleRxBindInfo(m4Packet& packet)
      *
      */
     _helper.logDebug("Received: TYPE_BIND with rxBindInfoFeedback");
-    if(_state == STATE_START_BIND) {
+    if(_internalM4State == InternalM4State::START_BIND) {
 
         //std::stringstream ss;
         //ss << dumpDataPacket(packet.data);
@@ -1411,7 +1412,7 @@ M4Lib::_handleRxBindInfo(m4Packet& packet)
         std::stringstream ss;
         ss << "RxBindInfo:" << _getRxBindInfoFeedbackName() << _rxBindInfoFeedback.nodeId;
         _helper.logDebug(ss.str());
-        _state = STATE_UNBIND;
+        _internalM4State = InternalM4State::UNBIND;
         _unbind();
         _timer.start(COMMAND_WAIT_INTERVAL);
     } else {
