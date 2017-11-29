@@ -136,6 +136,10 @@ public:
     void init();
     void deinit();
 
+    // This callback needs to send the mavlink RX_PAIR command.
+    // Note that it is important that this command gets retransmitted in case of
+    // timeout. Otherwise, the pairing can fail for the case where the command does
+    // not arrive on the autopilot side.
     void setPairCommandCallback(std::function<void()> callback);
     void setSwitchStateChangedCallback(std::function<void(SwitchId, SwitchState)> callback);
     void setButtonStateChangedCallback(std::function<void(ButtonId, ButtonState)> callback);
