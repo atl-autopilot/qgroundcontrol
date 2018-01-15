@@ -9,7 +9,6 @@
 // Only to be compiled on ST16 hardware (Android x86)
 #if defined(__androidx86__)
 
-#include <termios.h>
 #include <functional>
 #include <vector>
 #include <string>

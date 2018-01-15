@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
+#include <asm/termbits.h>
 
 #include <cstring>
 #include <sstream>
@@ -195,46 +197,33 @@ M4SerialComm::_openPort(const char* port)
 bool
 M4SerialComm::_setupPort(int baud)
 {
-    struct termios config;
+    struct termios2 config;
     std::memset(&config, 0, sizeof(config));
-    config.c_cflag |= (CS8 | CLOCAL | CREAD);
-    config.c_cc[VMIN]  = 1;
-    config.c_cc[VTIME] = 5;
-    bool baudError = false;
-    switch(baud) {
-        case 9600:
-            cfsetispeed(&config, B9600);
-            cfsetospeed(&config, B9600);
-            break;
-        case 19200:
-            cfsetispeed(&config, B19200);
-            cfsetospeed(&config, B19200);
-            break;
-        case 38400:
-            baudError = (cfsetispeed(&config, B38400) < 0 || cfsetospeed(&config, B38400) < 0);
-            break;
-        case 57600:
-            baudError = (cfsetispeed(&config, B57600) < 0 || cfsetospeed(&config, B57600) < 0);
-            break;
-        case 115200:
-            baudError = (cfsetispeed(&config, B115200) < 0 || cfsetospeed(&config, B115200) < 0);
-            break;
-        case 230400:
-            baudError = (cfsetispeed(&config, B230400) < 0 || cfsetospeed(&config, B230400) < 0);
-            break;
-        default:
-            baudError = true;
-            break;
-    }
-    if(baudError) {
+    if (ioctl(_fd, TCGETS2, &config) < 0) {
         std::stringstream ss;
-        ss << "SERIAL: Could not set baud rate of" << baud;
-        _helper.logWarn(ss.str());
+        ss << "Could not get termios2: " << strerror(errno);
+        _helper.logError(ss.str());
         return false;
     }
-    tcflush(_fd, TCIFLUSH);
-    if(tcsetattr(_fd, TCSANOW, &config) < 0) {
-        _helper.logWarn("SERIAL: Could not set serial configuration");
+    config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON);
+    config.c_oflag &= ~(OCRNL | ONLCR | ONLRET | ONOCR | OFILL | OPOST);
+    config.c_lflag &= ~(ECHO | ECHONL | ICANON | IEXTEN | ISIG | TOSTOP);
+    config.c_cflag &= ~(CSIZE | PARENB | CBAUD | CRTSCTS);
+    config.c_cflag |= CS8 | BOTHER;
+    config.c_cc[VMIN]   = 1; // We want at least 1 byte to be available.
+    config.c_cc[VTIME]  = 0; // We don't timeout but wait indefinitely.
+    config.c_ispeed = baud;
+    config.c_ospeed = baud;
+    if (ioctl(_fd, TCSETS2, &config) == -1) {
+        std::stringstream ss;
+        ss << "Could not set terminal attributes: " << strerror(errno);
+        _helper.logError(ss.str());
+        return false;
+    }
+    if (ioctl(_fd, TCFLSH, TCIOFLUSH) == -1) {
+        std::stringstream ss;
+        ss << "Could not flush terminal: " << strerror(errno);
+        _helper.logError(ss.str());
         return false;
     }
     return true;
