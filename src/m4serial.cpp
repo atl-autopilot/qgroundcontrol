@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <asm/termbits.h>
+#include <errno.h>
 
 #include <cstring>
 #include <sstream>
