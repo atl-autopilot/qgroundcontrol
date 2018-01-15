@@ -51,8 +51,11 @@ M4SerialComm::open()
         _helper.logWarn("SERIAL: Could not open port" + _uart_name);
         return false;
     }
-  //tcgetattr(_fd , &_savedtio);
     if(!_setupPort(_baudrate)) {
+        if (_fd >= 0) {
+            ::close(_fd);
+        }
+        _fd = -1;
         return false;
     }
     _serialPortStatus = SerialPortState::OPEN;
@@ -65,7 +68,6 @@ M4SerialComm::close()
 {
     _serialPortStatus = SerialPortState::CLOSED;
     if(_fd >= 0) {
-      //tcsetattr(_fd, TCSANOW, &_savedtio);
         ::close(_fd);
     }
     //if(!wait(1000)) {
