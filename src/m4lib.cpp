@@ -1442,7 +1442,6 @@ M4Lib::_handleChannel(m4Packet& packet)
             _handleMixedChannelData(packet);
             break;
         case Yuneec::CMD_TX_CHANNEL_DATA_RAW:
-            //-- We don't yet use this
             //_helper.logDebug("CMD_TX_CHANNEL_DATA_RAW");
             _handleRawChannelData(packet);
             break;
@@ -1657,15 +1656,21 @@ M4Lib::_handleRawChannelData(m4Packet& packet)
     if (_rawChannelsChangedCallback) {
         _rawChannelsChangedCallback();
     }
-    /*
-    QString resp = QString("Raw channels (%1): ").arg(analogChannelCount);
-    QString temp;
+
+#if 0
+    std::stringstream ss;
+    ss << "Raw channels ( " << int(analogChannelCount) << ")";
+    _helper.logInfo(ss.str());
+
+    ss.clear();
     for(int i = 0; i < _rawChannels.size(); i++) {
-        temp.sprintf(" %05u, ", _rawChannels[i]);
-        resp += temp;
+        ss << int(_rawChannels[i]);
+        if (i + 1< _rawChannels.size()) {
+            ss << ", ";
+        }
     }
-    qDebug() << resp;
-    */
+    _helper.logDebug(ss.str());
+#endif
 }
 
 void
@@ -1676,7 +1681,7 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
     // FIXME: this does not seem to be used.
     int analogChannelCount = _rxBindInfoFeedback.aNum  ? _rxBindInfoFeedback.aNum  : 10;
     int switchChannelCount = _rxBindInfoFeedback.swNum ? _rxBindInfoFeedback.swNum : 2;
-    QByteArray values = packet.commandValues();
+    std::vector<uint8_t> values = packet.commandValues();
     int value, val1, val2, startIndex;
     std::vector<uint8_t> channels;
     for(int i = 0; i < analogChannelCount + switchChannelCount; i++) {
@@ -1711,7 +1716,14 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
         }
         channels.push_back(value);
     }
-    emit channelDataStatus(channels);
+
+    std::stringstream ss;
+    ss << "Mixed channels (" << int(channels.size()) << ")";
+
+    for(int i = 0; i < channels.size(); i++) {
+        ss << int(channels[i]) << ", ";
+    }
+    _helper.logInfo(ss.str());
 #endif
 }
 
