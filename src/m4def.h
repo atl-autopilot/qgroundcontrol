@@ -104,6 +104,15 @@ enum {
      * Value is {@value}
      */
         CMD_SET_BINDKEY_FUNCTION = 0x91,
+
+    /**
+     * Command ID of {@link com.yuneec.droneservice.command.common.Version}
+     * <p/>
+     * Value is {@value}
+     */
+        CMD_GET_M4_VERSION = 0x93,
+
+
     /**
      * Command ID of {@link com.yuneec.droneservice.command.common.UpdateTxCompleted}
      * <p/>

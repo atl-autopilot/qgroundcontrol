@@ -216,6 +216,25 @@ M4Lib::setRawChannelsChangedCallback(std::function<void()> callback)
     _rawChannelsChangedCallback = callback;
 }
 
+
+void
+M4Lib::setVersionCallback(std::function<void(int, int, int)> callback)
+{
+    _versionCallback = callback;
+}
+
+bool 
+M4Lib::getVersion() 
+{
+    if (_versionCallback != nullptr) {
+        m4Command getVersionCmd(Yuneec::CMD_GET_M4_VERSION);
+        std::vector<uint8_t> cmd = getVersionCmd.pack();
+        return _write(cmd, true);
+    } else {
+        return false;
+    }
+}
+
 void
 M4Lib::setControllerLocationChangedCallback(std::function<void()> callback)
 {
@@ -1263,6 +1282,32 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                     break;
                 case Yuneec::CMD_EXIT_FACTORY_CAL:
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_FACTORY_CAL");
+                    break;
+                case Yuneec::CMD_GET_M4_VERSION:
+                    {
+                        std::stringstream ss;
+                        ss << "Received TYPE_RSP: " << toHex(data);
+                        _helper.logInfo(ss.str());
+
+                        std::stringstream ss2;
+                        ss2 << "Received TYPE_RSP as string: " << data.at(data.size()-6) << data.at(data.size()-5) << data.at(data.size()-4) << data.at(data.size()-3) << data.at(data.size()-2);
+                        _helper.logInfo(ss2.str());
+
+                        std::stringstream str_major;
+                        str_major << data.at(data.size()-6) << data.at(data.size()-5);
+
+                        std::stringstream str_minor;
+                        str_minor << data.at(data.size()-3) << data.at(data.size()-2);
+
+                        int major = 0;
+                        int minor = 0;
+
+                        str_major >> major;
+                        str_minor >> minor;
+
+                        _helper.logInfo(std::to_string(major) + "." + std::to_string(minor));
+                        _versionCallback(major, minor, 0);
+                    }
                     break;
                 default: {
                         std::stringstream ss;
