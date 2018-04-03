@@ -226,13 +226,9 @@ M4Lib::setVersionCallback(std::function<void(int, int, int)> callback)
 bool 
 M4Lib::getVersion() 
 {
-    if (_versionCallback != nullptr) {
-        m4Command getVersionCmd(Yuneec::CMD_GET_M4_VERSION);
-        std::vector<uint8_t> cmd = getVersionCmd.pack();
-        return _write(cmd, true);
-    } else {
-        return false;
-    }
+    m4Command getVersionCmd(Yuneec::CMD_GET_M4_VERSION);
+    std::vector<uint8_t> cmd = getVersionCmd.pack();
+    return _write(cmd, true);
 }
 
 void
@@ -1306,7 +1302,12 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                         str_minor >> minor;
 
                         _helper.logInfo(std::to_string(major) + "." + std::to_string(minor));
-                        _versionCallback(major, minor, 0);
+
+                        if (_versionCallback != nullptr) {
+                            _versionCallback(major, minor, 0);
+                        } else {
+                            _helper.logInfo("Version callback not set.");
+                        }
                     }
                     break;
                 default: {
