@@ -1285,28 +1285,32 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                         ss << "Received TYPE_RSP: " << toHex(data);
                         _helper.logInfo(ss.str());
 
-                        std::stringstream ss2;
-                        ss2 << "Received TYPE_RSP as string: " << data.at(data.size()-6) << data.at(data.size()-5) << data.at(data.size()-4) << data.at(data.size()-3) << data.at(data.size()-2);
-                        _helper.logInfo(ss2.str());
+                        if (data.size() >= 6) {
+                            ss.clear();
+                            ss << "Received TYPE_RSP as string: " << data.at(data.size()-6) << data.at(data.size()-5) << data.at(data.size()-4) << data.at(data.size()-3) << data.at(data.size()-2);
+                            _helper.logInfo(ss.str());
 
-                        std::stringstream str_major;
-                        str_major << data.at(data.size()-6) << data.at(data.size()-5);
+                            std::stringstream str_major;
+                            str_major << data.at(data.size()-6) << data.at(data.size()-5);
 
-                        std::stringstream str_minor;
-                        str_minor << data.at(data.size()-3) << data.at(data.size()-2);
+                            std::stringstream str_minor;
+                            str_minor << data.at(data.size()-3) << data.at(data.size()-2);
 
-                        int major = 0;
-                        int minor = 0;
+                            int major = 0;
+                            int minor = 0;
 
-                        str_major >> major;
-                        str_minor >> minor;
+                            str_major >> major;
+                            str_minor >> minor;
 
-                        _helper.logInfo(std::to_string(major) + "." + std::to_string(minor));
+                            _helper.logInfo(std::to_string(major) + "." + std::to_string(minor));
 
-                        if (_versionCallback != nullptr) {
-                            _versionCallback(major, minor, 0);
+                            if (_versionCallback != nullptr) {
+                                _versionCallback(major, minor, 0);
+                            } else {
+                                _helper.logInfo("Version callback not set.");
+                            }
                         } else {
-                            _helper.logInfo("Version callback not set.");
+                            _helper.logInfo("Received data has wrong format. Cannot extract version information.");
                         }
                     }
                     break;
