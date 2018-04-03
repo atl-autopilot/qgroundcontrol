@@ -153,6 +153,8 @@ public:
     void setM4StateChangedCallback(std::function<void()> callback);
     void setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)> callback);
     void setSettings(const RxBindInfo& rxBindInfo);
+    void setVersionCallback(std::function<void(int, int, int)> callback);
+    bool getVersion();
 
     void tryRead();
 
@@ -279,6 +281,7 @@ private:
     std::function<void()> _controllerLocationChangedCallback = nullptr;
     std::function<void()> _m4StateChangedCallback = nullptr;
     std::function<void(const RxBindInfo&)> _saveSettingsCallback = nullptr;
+    std::function<void(int, int, int)> _versionCallback = nullptr;
 
     int                     _responseTryCount;
     M4State                 _m4State;
