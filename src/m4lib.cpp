@@ -1302,7 +1302,9 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                             str_major >> major;
                             str_minor >> minor;
 
-                            _helper.logInfo(std::to_string(major) + "." + std::to_string(minor));
+                            ss.clear();
+                            ss << "Received M4 Version: " << major << "." << minor;
+                            _helper.logInfo(ss.str());
 
                             if (_versionCallback != nullptr) {
                                 _versionCallback(major, minor, 0);
