@@ -164,6 +164,12 @@ M4Lib::init()
 
     setPowerKey(Yuneec::BIND_KEY_FUNCTION_PWR);
     _helper.msleep(SEND_INTERVAL);
+    //-- Tell ST16 to send raw channel data (to app)
+    _sendRecvRawCh();
+    _helper.msleep(SEND_INTERVAL);
+    //-- Start sending data
+    _enterRun();
+    _helper.msleep(SEND_INTERVAL);
 #endif
 }
 
@@ -479,6 +485,15 @@ M4Lib::_sendRecvBothCh()
 {
     _helper.logDebug("Sending: CMD_RECV_BOTH_CH");
     m4Command enterRecvCmd(Yuneec::CMD_RECV_BOTH_CH);
+    std::vector<uint8_t> cmd = enterRecvCmd.pack();
+    return _write(cmd, DEBUG_DATA_DUMP);
+}
+
+bool
+M4Lib::_sendRecvRawCh()
+{
+    _helper.logDebug("Sending: CMD_RECV_RAW_CH_ONLY");
+    m4Command enterRecvCmd(Yuneec::CMD_RECV_RAW_CH_ONLY);
     std::vector<uint8_t> cmd = enterRecvCmd.pack();
     return _write(cmd, DEBUG_DATA_DUMP);
 }
@@ -822,8 +837,8 @@ M4Lib::_initSequence()
         ss << "Previously bound with:" << int(_rxBindInfoFeedback.nodeId) << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
         _helper.logInfo(ss.str()) ;
         //-- Initialize M4
-        _internalM4State = InternalM4State::RECV_BOTH_CH;
-        _sendRecvBothCh();
+        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
+        _setChannelSetting();
     } else {
         //-- First run. Start binding sequence
         _responseTryCount = 0;
@@ -921,16 +936,6 @@ M4Lib::_stateManager()
             _exitBind();
             _timer.start(COMMAND_WAIT_INTERVAL);
             //-- TODO: This can't wait for ever...
-            break;
-        case InternalM4State::RECV_BOTH_CH:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logWarn("Too many STATE_RECV_BOTH_CH Timeouts. Giving up...");
-            } else {
-                _helper.logInfo("STATE_RECV_BOTH_CH Timeout");
-                _sendRecvBothCh();
-                _timer.start(COMMAND_WAIT_INTERVAL);
-                _responseTryCount++;
-            }
             break;
         case InternalM4State::SET_CHANNEL_SETTINGS:
             _helper.logInfo("STATE_SET_CHANNEL_SETTINGS Timeout");
@@ -1184,19 +1189,18 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_BIND");
                     if(_internalM4State == InternalM4State::EXIT_BIND) {
                         _responseTryCount = 0;
-                        _internalM4State = InternalM4State::RECV_BOTH_CH;
-                        _sendRecvBothCh();
+                        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
+                        _setChannelSetting();
                         _timer.start(COMMAND_WAIT_INTERVAL);
                     }
                     break;
                 case Yuneec::CMD_RECV_BOTH_CH:
                     //-- Response from _sendRecvBothCh()
                     _helper.logDebug("Received TYPE_RSP: CMD_RECV_BOTH_CH");
-                    if(_internalM4State == InternalM4State::RECV_BOTH_CH) {
-                        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
-                        _setChannelSetting();
-                        _timer.start(COMMAND_WAIT_INTERVAL);
-                    }
+                    break;
+                case Yuneec::CMD_RECV_RAW_CH_ONLY:
+                    //-- Response from _sendRecvRawCh()
+                    _helper.logDebug("Received TYPE_RSP: CMD_RECV_RAW_CH_ONLY");
                     break;
                 case Yuneec::CMD_SET_CHANNEL_SETTING:
                     //-- Response from _setChannelSetting()

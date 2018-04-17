@@ -210,6 +210,7 @@ private:
     bool _enterFactoryCalibration();
     bool _exitFactoryCalibration();
     bool _sendRecvBothCh();
+    bool _sendRecvRawCh();
     bool _exitBind();
     bool _startBind();
     bool _bind(int rxAddr);
@@ -262,7 +263,6 @@ private:
         BIND,
         QUERY_BIND,
         EXIT_BIND,
-        RECV_BOTH_CH,
         SET_CHANNEL_SETTINGS,
         MIX_CHANNEL_DELETE,
         MIX_CHANNEL_ADD,

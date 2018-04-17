@@ -97,7 +97,9 @@ enum {
      * <p/>
      * Value is {@value}
      */
+        CMD_RECV_RAW_CH_ONLY   = 0x74,
         CMD_RECV_MIXED_CH_ONLY = 0x75,
+
     /**
      * Command ID of {@link com.yuneec.droneservice.command.common.PowerKey}
      * <p/>
