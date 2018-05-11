@@ -259,7 +259,7 @@ private:
     TimerInterface& _versionTimer;
     HelperInterface& _helper;
 
-    enum InternalM4State {
+    enum class InternalM4State {
         NONE,
         ENTER_BIND_ERROR,
         EXIT_RUN,

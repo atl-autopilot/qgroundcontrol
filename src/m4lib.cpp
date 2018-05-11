@@ -1005,7 +1005,7 @@ M4Lib::_stateManager()
             break;
         default:
             std::stringstream ss;
-            ss << "Timeout:" << _internalM4State;
+            ss << "Timeout:" << static_cast<int>(_internalM4State);
             _helper.logDebug(ss.str()) ;
             break;
     }
