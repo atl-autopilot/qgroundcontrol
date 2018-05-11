@@ -1336,7 +1336,12 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
 
                         if (data.size() >= 6) {
                             ss.clear();
-                            ss << "Received TYPE_RSP as string: " << data.at(data.size()-6) << data.at(data.size()-5) << data.at(data.size()-4) << data.at(data.size()-3) << data.at(data.size()-2);
+                            ss << "Received TYPE_RSP as string: "
+                               << data.at(data.size()-6)
+                               << data.at(data.size()-5)
+                               << data.at(data.size()-4)
+                               << data.at(data.size()-3)
+                               << data.at(data.size()-2);
                             _helper.logInfo(ss.str());
 
                             std::stringstream str_major;
