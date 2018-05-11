@@ -1,7 +1,10 @@
 /**
- * @file SerialComm.cc
+ * @file m4serial.cpp
+ *
+ * Originally based on SerialComm.cc of qgroundcontrol.
  *
  * @author Gus Grubba <mavlink@grubba.com>
+ * @author Julian Oes <julian@oes.ch>
  */
 
 #include "m4serial.h"
@@ -30,6 +33,7 @@ M4SerialComm::M4SerialComm(HelperInterface& helper)
 //-----------------------------------------------------------------------------
 M4SerialComm::~M4SerialComm()
 {
+    _shouldExit = true;
     close();
 }
 
@@ -46,12 +50,13 @@ M4SerialComm::init(std::string port, int baud)
 bool
 M4SerialComm::open()
 {
-    if(_serialPortStatus != SerialPortState::CLOSED || _fd >= 0) {
+    if(_fd >= 0) {
         return false;
     }
     _fd = _openPort(_uart_name.c_str());
     if(_fd < 0) {
         _helper.logWarn("SERIAL: Could not open port" + _uart_name);
+        _fd = -1;
         return false;
     }
     if(!_setupPort(_baudrate)) {
@@ -61,7 +66,6 @@ M4SerialComm::open()
         _fd = -1;
         return false;
     }
-    _serialPortStatus = SerialPortState::OPEN;
     return true;
 }
 
@@ -69,7 +73,6 @@ M4SerialComm::open()
 void
 M4SerialComm::close()
 {
-    _serialPortStatus = SerialPortState::CLOSED;
     if(_fd >= 0) {
         ::close(_fd);
     }
@@ -99,27 +102,29 @@ bool M4SerialComm::write(void* data, int length)
 void
 M4SerialComm::tryRead()
 {
-    if(_serialPortStatus == SerialPortState::OPEN) {
-        uint8_t b;
-        if(::read(_fd, &b, 1) == 1) {
-            switch (_currentPacketStatus) {
-                case PacketState::NONE:
-                    if(b == 0x55) {
-                        _currentPacketStatus = PacketState::FIRST_ID;
-                    }
-                    break;
-                case PacketState::FIRST_ID:
-                    if(b == 0x55) {
-                        _currentPacketStatus = PacketState::SECOND_ID;
-                    } else {
-                        _currentPacketStatus = PacketState::NONE;
-                    }
-                    break;
-                case PacketState::SECOND_ID:
-                    _readPacket(b);
+    if(_fd < 0 || _shouldExit) {
+        return;
+    }
+
+    uint8_t b;
+    if(::read(_fd, &b, 1) == 1) {
+        switch (_currentPacketStatus) {
+            case PacketState::NONE:
+                if(b == 0x55) {
+                    _currentPacketStatus = PacketState::FIRST_ID;
+                }
+                break;
+            case PacketState::FIRST_ID:
+                if(b == 0x55) {
+                    _currentPacketStatus = PacketState::SECOND_ID;
+                } else {
                     _currentPacketStatus = PacketState::NONE;
-                    break;
-            }
+                }
+                break;
+            case PacketState::SECOND_ID:
+                _readPacket(b);
+                _currentPacketStatus = PacketState::NONE;
+                break;
         }
     }
 }
@@ -138,9 +143,9 @@ M4SerialComm::_readData(void *buffer, int len)
     int tries = 0;
     int left  = len;
     uint8_t* ptr = reinterpret_cast<uint8_t*>(buffer);
-    while(left > 0) {
+    while(left > 0 && !_shouldExit && _fd >= 0) {
         int count = ::read(_fd, ptr, left);
-        if(count < 0 || _serialPortStatus != SerialPortState::OPEN || _fd < 0) {
+        if(count < 0) {
             return false;
         }
         left -= count;
@@ -156,7 +161,7 @@ M4SerialComm::_readData(void *buffer, int len)
 void
 M4SerialComm::_readPacket(uint8_t length)
 {
-    if(length > 1) {
+    if(length > 1 && _fd >= 0 && !_shouldExit) {
         length--; //-- Skip CRC from count
         uint8_t buffer[260];
         if(_readData(buffer, length)) {
@@ -234,6 +239,10 @@ M4SerialComm::_setupPort(int baud)
 int
 M4SerialComm::_writePort(void* buffer, int len)
 {
+    if(_fd < 0 || _shouldExit) {
+        return -1;
+    }
+
     int written = ::write(_fd, buffer, len);
     if(written != len && written >= 0) {
         std::stringstream ss;
