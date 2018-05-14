@@ -1359,10 +1359,10 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                             ss.clear();
                             ss << "Received M4 Version: " << major << "." << minor;
                             _helper.logInfo(ss.str());
+                            _versionTimer.stop();
 
                             if (_versionCallback != nullptr) {
                                 _versionCallback(major, minor, 0);
-                                _versionTimer.stop();
                                 if (_getVersionState == GetVersionState::GETTING_VERSION) {
                                     _getVersionState = GetVersionState::NONE;
                                 }
