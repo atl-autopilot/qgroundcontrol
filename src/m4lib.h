@@ -292,6 +292,7 @@ private:
     std::function<void()> _controllerLocationChangedCallback = nullptr;
     std::function<void()> _m4StateChangedCallback = nullptr;
     std::function<void(const RxBindInfo&)> _saveSettingsCallback = nullptr;
+    // A version of -1.-1.-1 means the request timed out.
     std::function<void(int, int, int)> _versionCallback = nullptr;
 
     int                     _responseTryCount;

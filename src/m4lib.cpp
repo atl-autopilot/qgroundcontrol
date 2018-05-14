@@ -1020,6 +1020,9 @@ M4Lib::_versionTimeout()
         case GetVersionState::GETTING_VERSION:
             if (_tryGetVersionCount > GET_VERSION_TRIES) {
                 _helper.logWarn("Too many GET_VERSION tries. Giving up...");
+                if (_versionCallback) {
+                    _versionCallback(-1, -1, -1);
+                }
             } else {
                 _helper.logInfo("GET_VERSION Timeout, trying again");
                 _versionTimer.start(COMMAND_WAIT_INTERVAL);
