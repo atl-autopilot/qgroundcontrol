@@ -192,13 +192,17 @@ public:
 
 #if defined(__androidx86__)
     // These need to be ifdefd, otherwise we get linking errors.
-    M4Lib(TimerInterface& timer, HelperInterface& helper);
+    M4Lib(
+        TimerInterface& timer,
+        TimerInterface& versionTimer,
+        HelperInterface& helper);
     ~M4Lib();
 
 private:
     void _bytesReady(std::vector<uint8_t> data);
     void _initSequence();
     void _stateManager();
+    void _versionTimeout();
     void _initAndCheckBinding();
 
     bool _write(std::vector<uint8_t> data, bool debug);
@@ -244,6 +248,7 @@ private:
     void _handleControllerFeedback           (m4Packet& packet);
     void _handlePassThroughPacket            (m4Packet& packet);
     std::string _getRxBindInfoFeedbackName   ();
+    bool _tryGetVersion                      ();
 
     static  int     _byteArrayToInt  (std::vector<uint8_t> data, int offset, bool isBigEndian = false);
     static  short   _byteArrayToShort(std::vector<uint8_t> data, int offset, bool isBigEndian = false);
@@ -251,9 +256,10 @@ private:
     M4SerialComm* _commPort;
 
     TimerInterface& _timer;
+    TimerInterface& _versionTimer;
     HelperInterface& _helper;
 
-    enum InternalM4State {
+    enum class InternalM4State {
         NONE,
         ENTER_BIND_ERROR,
         EXIT_RUN,
@@ -271,6 +277,11 @@ private:
         RUNNING
     };
 
+    enum class GetVersionState {
+        NONE,
+        GETTING_VERSION
+    };
+
     std::function<void()>   _pairCommandCallback = nullptr;
     std::function<void(SwitchId, SwitchState)> _switchStateChangedCallback = nullptr;
     std::function<void(ButtonId, ButtonState)> _buttonStateChangedCallback = nullptr;
@@ -281,11 +292,13 @@ private:
     std::function<void()> _controllerLocationChangedCallback = nullptr;
     std::function<void()> _m4StateChangedCallback = nullptr;
     std::function<void(const RxBindInfo&)> _saveSettingsCallback = nullptr;
+    // A version of -1.-1.-1 means the request timed out.
     std::function<void(int, int, int)> _versionCallback = nullptr;
 
     int                     _responseTryCount;
     M4State                 _m4State;
     InternalM4State         _internalM4State;
+    GetVersionState         _getVersionState {GetVersionState::NONE};
     uint8_t                 _channelNumIndex;
     RxBindInfo              _rxBindInfoFeedback;
     int                     _currentChannelAdd;
@@ -300,6 +313,7 @@ private:
     bool                    _binding;
     std::vector<uint16_t>   _rawChannels;
     ControllerLocation      _controllerLocation;
+    int                     _tryGetVersionCount {0};
 #endif // defined(__androidx86__)
 };
 

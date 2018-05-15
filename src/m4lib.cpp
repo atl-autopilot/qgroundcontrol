@@ -23,6 +23,8 @@ static const char* kUartName        = "/dev/ttyMFD0";
 #define COMMAND_WAIT_INTERVAL       250
 #define SEND_INTERVAL               60
 #define COMMAND_RESPONSE_TRIES      4
+#define VERSION_WAIT_INTERVAL       250
+#define GET_VERSION_TRIES           40 // At 4 Hz that's 10 seconds.
 
 /*
  * Original source was ported from:
@@ -51,8 +53,12 @@ toHex(std::vector<uint8_t> data)
 }
 
 
-M4Lib::M4Lib(TimerInterface& timer, HelperInterface& helper)
+M4Lib::M4Lib(
+        TimerInterface& timer,
+        TimerInterface& versionTimer,
+        HelperInterface& helper)
     : _timer(timer)
+    , _versionTimer(versionTimer)
     , _helper(helper)
     , _responseTryCount(0)
     , _m4State(M4State::NONE)
@@ -72,6 +78,7 @@ M4Lib::M4Lib(TimerInterface& timer, HelperInterface& helper)
     _channelNumIndex    = 6;
 
     _timer.setCallback(std::bind(&M4Lib::_stateManager, this));
+    _versionTimer.setCallback(std::bind(&M4Lib::_versionTimeout, this));
     std::memset(_rawChannelsCalibration, 0, sizeof(_rawChannelsCalibration));
 }
 
@@ -177,6 +184,7 @@ void
 M4Lib::deinit()
 {
     _timer.stop();
+    _versionTimer.stop();
     _commPort->close();
 }
 
@@ -229,8 +237,26 @@ M4Lib::setVersionCallback(std::function<void(int, int, int)> callback)
     _versionCallback = callback;
 }
 
-bool 
-M4Lib::getVersion() 
+bool
+M4Lib::getVersion()
+{
+    if (_getVersionState == GetVersionState::GETTING_VERSION) {
+        _helper.logWarn("already trying to get version.");
+    }
+
+    if (!_versionCallback) {
+        _helper.logWarn("callback to get version not set.");
+    }
+
+    _tryGetVersionCount = 0;
+    _getVersionState = GetVersionState::GETTING_VERSION;
+    _versionTimer.start(VERSION_WAIT_INTERVAL);
+    ++_tryGetVersionCount;
+    return _tryGetVersion();
+}
+
+bool
+M4Lib::_tryGetVersion()
 {
     m4Command getVersionCmd(Yuneec::CMD_GET_M4_VERSION);
     std::vector<uint8_t> cmd = getVersionCmd.pack();
@@ -979,8 +1005,41 @@ M4Lib::_stateManager()
             break;
         default:
             std::stringstream ss;
-            ss << "Timeout:" << _internalM4State;
+            ss << "Timeout:" << static_cast<int>(_internalM4State);
             _helper.logDebug(ss.str()) ;
+            break;
+    }
+}
+
+void
+M4Lib::_versionTimeout()
+{
+    switch (_getVersionState) {
+        case GetVersionState::NONE:
+            break;
+        case GetVersionState::GETTING_VERSION:
+            if (_tryGetVersionCount > GET_VERSION_TRIES) {
+                _helper.logWarn("Too many GET_VERSION tries. Giving up...");
+                _getVersionState = GetVersionState::NONE;
+                if (_versionCallback) {
+                    _versionCallback(-1, -1, -1);
+                }
+            } else if (_tryGetVersionCount == 10 ||
+                       _tryGetVersionCount == 20 ||
+                       _tryGetVersionCount == 30) {
+                // Sometimes in the beginning, we just can't get the version, unless we
+                // stop it all by doing exitRun.
+                _helper.logError("We are trying to do exitRun to get the version");
+                _versionTimer.start(COMMAND_WAIT_INTERVAL);
+                _exitRun();
+                ++_tryGetVersionCount;
+
+            } else {
+                _helper.logInfo("GET_VERSION Timeout, trying again");
+                _versionTimer.start(COMMAND_WAIT_INTERVAL);
+                ++_tryGetVersionCount;
+                _tryGetVersion();
+            }
             break;
     }
 }
@@ -1291,7 +1350,12 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
 
                         if (data.size() >= 6) {
                             ss.clear();
-                            ss << "Received TYPE_RSP as string: " << data.at(data.size()-6) << data.at(data.size()-5) << data.at(data.size()-4) << data.at(data.size()-3) << data.at(data.size()-2);
+                            ss << "Received TYPE_RSP as string: "
+                               << data.at(data.size()-6)
+                               << data.at(data.size()-5)
+                               << data.at(data.size()-4)
+                               << data.at(data.size()-3)
+                               << data.at(data.size()-2);
                             _helper.logInfo(ss.str());
 
                             std::stringstream str_major;
@@ -1309,14 +1373,18 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                             ss.clear();
                             ss << "Received M4 Version: " << major << "." << minor;
                             _helper.logInfo(ss.str());
-
+                            _versionTimer.stop();
+                            if (_getVersionState == GetVersionState::GETTING_VERSION) {
+                                _getVersionState = GetVersionState::NONE;
+                            }
                             if (_versionCallback != nullptr) {
                                 _versionCallback(major, minor, 0);
                             } else {
-                                _helper.logInfo("Version callback not set.");
+                                _helper.logWarn("Version callback not set.");
                             }
                         } else {
-                            _helper.logInfo("Received data has wrong format. Cannot extract version information.");
+                            _helper.logInfo("Received data has wrong format. "
+                                "Cannot extract version information.");
                         }
                     }
                     break;

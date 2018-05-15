@@ -1,7 +1,10 @@
 /**
- * @file SerialComm.h
+ * @file m4serial.h
+ *
+ * Originally based on SerialComm.h of qgroundcontrol.
  *
  * @author Gus Grubba <mavlink@grubba.com>
+ * @author Julian Oes <julian@oes.ch>
  */
 
 #pragma once
@@ -12,6 +15,7 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <atomic>
 
 class HelperInterface;
 
@@ -35,11 +39,6 @@ private:
     bool        _readData       (void *buffer, int len);
 
 private:
-    enum class SerialPortState {
-        CLOSED,
-        OPEN,
-        ERROR
-    };
     enum class PacketState {
         NONE,
         FIRST_ID,
@@ -47,12 +46,12 @@ private:
     };
 
     HelperInterface& _helper;
-    int         _fd = -1;
-    int         _baudrate = 230400;
-    SerialPortState _serialPortStatus = SerialPortState::CLOSED;
-    std::string     _uart_name {};
-    PacketState _currentPacketStatus = PacketState::NONE;
-    std::function<void(std::vector<uint8_t>)> _bytesReadyCallback = nullptr;
+    std::atomic<bool> _shouldExit {false};
+    int _fd {-1};
+    int _baudrate {230400};
+    std::string _uart_name {};
+    PacketState _currentPacketStatus {PacketState::NONE};
+    std::function<void(std::vector<uint8_t>)> _bytesReadyCallback {nullptr};
 };
 
 #endif
