@@ -1024,6 +1024,16 @@ M4Lib::_versionTimeout()
                 if (_versionCallback) {
                     _versionCallback(-1, -1, -1);
                 }
+            } else if (_tryGetVersionCount == 10 ||
+                       _tryGetVersionCount == 20 ||
+                       _tryGetVersionCount == 30) {
+                // Sometimes in the beginning, we just can't get the version, unless we
+                // stop it all by doing exitRun.
+                _helper.logError("We are trying to do exitRun to get the version");
+                _versionTimer.start(COMMAND_WAIT_INTERVAL);
+                _exitRun();
+                ++_tryGetVersionCount;
+
             } else {
                 _helper.logInfo("GET_VERSION Timeout, trying again");
                 _versionTimer.start(COMMAND_WAIT_INTERVAL);
