@@ -70,6 +70,9 @@ M4Lib::M4Lib(
     , _rcCalibrationComplete(true)
     , _vehicleConnected(false)
     , _binding(false)
+    #ifdef ENABLE_OFDM
+    , _skipBind(false)
+    #endif
 {
     _commPort = new M4SerialComm(_helper);
     _commPort->setBytesReadyCallback(std::bind(&M4Lib::_bytesReady, this, std::placeholders::_1));
@@ -169,7 +172,18 @@ M4Lib::init()
         _helper.logWarn("Could not start serial communication with M4");
     }
 
+#ifdef ENABLE_OFDM
+    _skipBind = true;
+
+    if(_skipBind) {
+       _internalM4State = InternalM4State::MIX_CHANNEL_DELETE;
+       _syncMixingDataDeleteAll();
+    } else {
+       setPowerKey(Yuneec::BIND_KEY_FUNCTION_PWR);
+    }
+#else
     setPowerKey(Yuneec::BIND_KEY_FUNCTION_PWR);
+#endif
     _helper.msleep(SEND_INTERVAL);
     //-- Tell ST16 to send raw channel data (to app)
     _sendRecvRawCh();
@@ -281,6 +295,14 @@ M4Lib::setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)>
     _saveSettingsCallback = callback;
 }
 
+#ifdef ENABLE_OFDM
+void
+M4Lib::sendRCChannelCallback(std::function<void(std::vector<uint8_t>)> callback)
+{
+    _sendRCChannelCallback = callback;
+}
+#endif
+
 void
 M4Lib::setSettings(const RxBindInfo& rxBindInfo)
 {
@@ -314,6 +336,13 @@ M4Lib::enterBindMode(bool skipPairCommand)
 {
     std::stringstream ss;
     ss << "enterBindMode() Current Mode: " << int(_m4State);
+
+#ifdef ENABLE_OFDM
+    if(_skipBind) {
+       _helper.logWarn("Binding is not required, skip");
+       return;
+    }
+#endif
 
     _helper.logInfo(ss.str());
     if(!skipPairCommand) {
@@ -1290,7 +1319,15 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                             if(_currentChannelAdd < NUM_CHANNELS) {
                                 _syncMixingDataAdd();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
-                            } else {
+                            }
+#ifdef ENABLE_OFDM
+                            else if(_skipBind) {
+                                _helper.logWarn("Channel mapping updated successfully, now Joystick is running");
+                                _internalM4State = InternalM4State::RUNNING;
+                                _timer.stop();
+                            }
+#endif
+                            else {
                                 _responseTryCount = 0;
                                 _internalM4State = InternalM4State::SEND_RX_INFO;
                                 _sendRxResInfo();
@@ -1801,6 +1838,10 @@ void
 M4Lib::_handleMixedChannelData(m4Packet& packet)
 {
     UNUSED(packet);
+#ifdef ENABLE_OFDM
+    std::vector<uint8_t> values = packet.commandValues();
+    _sendRCChannelCallback(values);
+#endif
 #if 0
     // FIXME: this does not seem to be used.
     int analogChannelCount = _rxBindInfoFeedback.aNum  ? _rxBindInfoFeedback.aNum  : 10;

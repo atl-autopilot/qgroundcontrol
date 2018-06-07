@@ -152,6 +152,9 @@ public:
     void setControllerLocationChangedCallback(std::function<void()> callback);
     void setM4StateChangedCallback(std::function<void()> callback);
     void setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)> callback);
+#ifdef ENABLE_OFDM
+    void sendRCChannelCallback(std::function<void(std::vector<uint8_t>)> callback);
+#endif
     void setSettings(const RxBindInfo& rxBindInfo);
     void setVersionCallback(std::function<void(int, int, int)> callback);
     bool getVersion();
@@ -294,7 +297,10 @@ private:
     std::function<void(const RxBindInfo&)> _saveSettingsCallback = nullptr;
     // A version of -1.-1.-1 means the request timed out.
     std::function<void(int, int, int)> _versionCallback = nullptr;
-
+#ifdef ENABLE_OFDM
+    bool _skipBind;
+    std::function<void(std::vector<uint8_t>)> _sendRCChannelCallback=nullptr;
+#endif
     int                     _responseTryCount;
     M4State                 _m4State;
     InternalM4State         _internalM4State;
