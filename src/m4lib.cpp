@@ -60,7 +60,7 @@ M4Lib::M4Lib(
     : _timer(timer)
     , _versionTimer(versionTimer)
     , _helper(helper)
-    #ifdef ENABLE_OFDM
+    #ifdef REMOVE_ZEGBEE
     , _skipBind(false)
     #endif
     , _responseTryCount(0)
@@ -172,7 +172,7 @@ M4Lib::init()
         _helper.logWarn("Could not start serial communication with M4");
     }
 
-#ifdef ENABLE_OFDM
+#ifdef REMOVE_ZEGBEE
     _skipBind = true;
 
     if(_skipBind) {
@@ -295,7 +295,7 @@ M4Lib::setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)>
     _saveSettingsCallback = callback;
 }
 
-#ifdef ENABLE_OFDM
+#ifdef REMOVE_ZEGBEE
 void
 M4Lib::sendRCChannelCallback(std::function<void(std::vector<uint8_t>)> callback)
 {
@@ -337,7 +337,7 @@ M4Lib::enterBindMode(bool skipPairCommand)
     std::stringstream ss;
     ss << "enterBindMode() Current Mode: " << int(_m4State);
 
-#ifdef ENABLE_OFDM
+#ifdef REMOVE_ZEGBEE
     if(_skipBind) {
        _helper.logDebug("Binding is not required, skip");
        return;
@@ -1320,7 +1320,7 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                                 _syncMixingDataAdd();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
                             }
-#ifdef ENABLE_OFDM
+#ifdef REMOVE_ZEGBEE
                             else if(_skipBind) {
                                 _helper.logDebug("Channel mapping updated successfully, now Joystick is running");
                                 _internalM4State = InternalM4State::RUNNING;
@@ -1838,7 +1838,7 @@ void
 M4Lib::_handleMixedChannelData(m4Packet& packet)
 {
     UNUSED(packet);
-#ifdef ENABLE_OFDM
+#ifdef REMOVE_ZEGBEE
     std::vector<uint8_t> values = packet.commandValues();
     _sendRCChannelCallback(values);
 #endif
