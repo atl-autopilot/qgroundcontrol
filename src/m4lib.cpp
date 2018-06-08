@@ -339,7 +339,7 @@ M4Lib::enterBindMode(bool skipPairCommand)
 
 #ifdef ENABLE_OFDM
     if(_skipBind) {
-       _helper.logWarn("Binding is not required, skip");
+       _helper.logDebug("Binding is not required, skip");
        return;
     }
 #endif
@@ -1322,7 +1322,7 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                             }
 #ifdef ENABLE_OFDM
                             else if(_skipBind) {
-                                _helper.logWarn("Channel mapping updated successfully, now Joystick is running");
+                                _helper.logDebug("Channel mapping updated successfully, now Joystick is running");
                                 _internalM4State = InternalM4State::RUNNING;
                                 _timer.stop();
                             }
