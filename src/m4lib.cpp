@@ -172,6 +172,7 @@ M4Lib::init()
         _helper.logWarn("Could not start serial communication with M4");
     }
 
+//-- We don't use zigbee in some project,so skip binding zigbee and clear the mixing data
 #ifdef DISABLE_ZIGBEE
     _skipBind = true;
 
@@ -295,6 +296,7 @@ M4Lib::setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)>
     _saveSettingsCallback = callback;
 }
 
+//-- TODO:callback the function in M4interface to send the mixed RC channel values
 #ifdef DISABLE_ZIGBEE
 void
 M4Lib::sendRCChannelCallback(std::function<void(std::vector<uint8_t>)> callback)
@@ -337,6 +339,7 @@ M4Lib::enterBindMode(bool skipPairCommand)
     std::stringstream ss;
     ss << "enterBindMode() Current Mode: " << int(_m4State);
 
+//-- TODO:skip binding zigbee
 #ifdef DISABLE_ZIGBEE
     if(_skipBind) {
        _helper.logDebug("Binding is not required, skip");
@@ -1320,6 +1323,7 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                                 _syncMixingDataAdd();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
                             }
+//-- TODO:let M4 send mixed RC channel after mixing data is added
 #ifdef DISABLE_ZIGBEE
                             else if(_skipBind) {
                                 _helper.logDebug("Channel mapping updated successfully, now Joystick is running");
@@ -1838,6 +1842,7 @@ void
 M4Lib::_handleMixedChannelData(m4Packet& packet)
 {
     UNUSED(packet);
+//-- TODO:get the mixed RC value packet and callback function in M4interface
 #ifdef DISABLE_ZIGBEE
     std::vector<uint8_t> values = packet.commandValues();
     _sendRCChannelCallback(values);

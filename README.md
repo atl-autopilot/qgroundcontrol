@@ -23,3 +23,16 @@ mkdir build && cd build
 cmake -DPLATFORM:STRING=Android_x86 ..
 make
 ```
+Without DISABLE_ZIGBEE define:
+```
+mkdir build && cd build
+cmake ..
+make
+```
+
+with DISABLE_ZIGBEE define:
+```
+mkdir build && cd build
+cmake -DZIGBEE:STRING=DISABLE_ZIGBEE ..
+make
+```

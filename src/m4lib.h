@@ -152,6 +152,7 @@ public:
     void setControllerLocationChangedCallback(std::function<void()> callback);
     void setM4StateChangedCallback(std::function<void()> callback);
     void setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)> callback);
+    //We don't use zigbee for sending upstream data if "DISABLE_ZIGBEE" is defined
 #ifdef DISABLE_ZIGBEE
     void sendRCChannelCallback(std::function<void(std::vector<uint8_t>)> callback);
 #endif
