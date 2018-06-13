@@ -18,6 +18,13 @@ else()
     message(STATUS "Building for non-ST16")
 endif()
 
+if ( ZIGBEE STREQUAL "DISABLE_ZIGBEE")
+     message(STATUS "Disable ZIGBEE")
+     add_definitions(-DDISABLE_ZIGBEE)
+ else()
+     message(STATUS "Uising ZIGBEE")
+ endif()
+
 add_library(m4lib STATIC
     src/m4lib.cpp
     src/m4serial.cpp
