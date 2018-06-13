@@ -23,14 +23,18 @@ mkdir build && cd build
 cmake -DPLATFORM:STRING=Android_x86 ..
 make
 ```
-Without DISABLE_ZIGBEE define:
+
+The m4lib can be built with ZIGBEE or OFDM support. ZIGBEE was used in older ST16 and ST16S but is has been replaced by an OFDM module in newer models.
+
+
+To build for older ST16/ST16S with ZIGBEE, use:
 ```
 mkdir build && cd build
 cmake ..
 make
 ```
 
-with DISABLE_ZIGBEE define:
+To build for newer models with OFDM support, use:
 ```
 mkdir build && cd build
 cmake -DZIGBEE:STRING=DISABLE_ZIGBEE ..
