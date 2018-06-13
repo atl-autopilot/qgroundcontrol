@@ -18,7 +18,7 @@ else()
     message(STATUS "Building for non-ST16")
 endif()
 
-if ( ZIGBBEE STREQUAL "DISABLE_ZIGBEE")
+if ( ZIGBEE STREQUAL "DISABLE_ZIGBEE")
      message(STATUS "Disable ZIGBEE")
      add_definitions(-DDISABLE_ZIGBEE)
  else()
