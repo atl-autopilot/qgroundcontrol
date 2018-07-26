@@ -54,7 +54,8 @@ typedef  struct  TableDeviceChannelNumInfo{
 } TableDeviceChannelNumInfo_t;
 
 typedef enum {
-    ChannelNumAanlog = 1,
+    ChannelNumUnknown = 0,
+    ChannelNumAanlog,
     ChannelNumTrim,
     ChannelNumSwitch,
     ChannelNumMonitor,
