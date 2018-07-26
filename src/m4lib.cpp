@@ -73,6 +73,7 @@ M4Lib::M4Lib(
     , _rcCalibrationComplete(true)
     , _vehicleConnected(false)
     , _binding(false)
+    , _slaveMode(false)
 {
     _commPort = new M4SerialComm(_helper);
     _commPort->setBytesReadyCallback(std::bind(&M4Lib::_bytesReady, this, std::placeholders::_1));
@@ -128,6 +129,12 @@ M4Lib::getRawChannels()
     return _rawChannels;
 }
 
+std::vector<uint16_t>
+M4Lib::getMixedChannels()
+{
+    return _mixedChannels;
+}
+
 const M4Lib::ControllerLocation&
 M4Lib::getControllerLocation()
 {
@@ -152,7 +159,7 @@ M4Lib::setRcActive(bool rcActive)
     }
 
     //-- This means there was a RC timeout while the vehicle was connected.
-    if (!rcActive && _vehicleConnected) {
+    if (!rcActive && _vehicleConnected && !_slaveMode) {
         //-- If we are in run state after binding and we don't have RC, bind it again.
         if (_vehicleConnected && _softReboot && _m4State == M4State::RUN) {
             _softReboot = false;
@@ -166,17 +173,14 @@ void
 M4Lib::init()
 {
 #if defined(__androidx86__)
-
     if(!_commPort || !_commPort->init(kUartName, 230400) || !_commPort->open()) {
         //-- TODO: If this ever happens, we need to do something about it
         _helper.logWarn("Could not start serial communication with M4");
     }
-
-//-- We don't use zigbee in some project,so skip binding zigbee and clear the mixing data
+//-- We don't use zigbee in some projects, so skip binding zigbee and clear the mixing data
 #ifdef DISABLE_ZIGBEE
     _skipBind = true;
-
-    if(_skipBind) {
+    if(_skipBind) { //-- With this being set above to true, what's the point of the test?
        _internalM4State = InternalM4State::MIX_CHANNEL_DELETE;
        _syncMixingDataDeleteAll();
     } else {
@@ -186,8 +190,13 @@ M4Lib::init()
     setPowerKey(Yuneec::BIND_KEY_FUNCTION_PWR);
 #endif
     _helper.msleep(SEND_INTERVAL);
+#if 1
     //-- Tell ST16 to send raw channel data (to app)
     _sendRecvRawCh();
+#else
+    //-- Tell ST16 to send both raw and mixed channel data (to app)
+    _sendRecvBothCh();
+#endif
     _helper.msleep(SEND_INTERVAL);
     //-- Start sending data
     _enterRun();
@@ -245,6 +254,11 @@ M4Lib::setRawChannelsChangedCallback(std::function<void()> callback)
     _rawChannelsChangedCallback = callback;
 }
 
+void
+M4Lib::setMixedChannelsChangedCallback(std::function<void()> callback)
+{
+    _mixedChannelsChangedCallback = callback;
+}
 
 void
 M4Lib::setVersionCallback(std::function<void(int, int, int)> callback)
@@ -296,15 +310,6 @@ M4Lib::setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)>
     _saveSettingsCallback = callback;
 }
 
-//-- TODO:callback the function in M4interface to send the mixed RC channel values
-#ifdef DISABLE_ZIGBEE
-void
-M4Lib::sendRCChannelCallback(std::function<void(std::vector<uint8_t>)> callback)
-{
-    _sendRCChannelCallback = callback;
-}
-#endif
-
 void
 M4Lib::setSettings(const RxBindInfo& rxBindInfo)
 {
@@ -334,8 +339,38 @@ M4Lib::resetBind()
 }
 
 void
+M4Lib::enterSlaveMode()
+{
+    _binding = false;
+    _slaveMode = true;
+    //
+    //   TODO: When switching to "simulation" mode, something is causing
+    //   a crash. It's not related to the M4. Something received from it
+    //   is probably different and some handler is crashing because of it.
+    //   I have not been able to get stack traces during debug, which
+    //   makes it hard to find where the crash occurs.
+    //
+    //_exitRun();
+    //_helper.msleep(SEND_INTERVAL);
+    //_internalM4State = InternalM4State::ENTER_SIMULATION;
+    //_enterSimulation();
+}
+
+void
+M4Lib::exitSlaveMode()
+{
+    _slaveMode = false;
+    //_internalM4State = InternalM4State::EXIT_SIMULATION;
+    //_exitSimulation();
+}
+
+void
 M4Lib::enterBindMode(bool skipPairCommand)
 {
+    if(_slaveMode) {
+        _helper.logWarn("enterBindMode() called while in slave mode.");
+        return;
+    }
     std::stringstream ss;
     ss << "enterBindMode() Current Mode: " << int(_m4State);
 
@@ -369,6 +404,8 @@ M4Lib::_tryEnterBindMode()
         _exitBind();
     } else if(_m4State == M4State::RUN) {
         _exitRun();
+    } else if(_m4State == M4State::SIM) {
+        _exitSimulation();
     }
     // TODO: check this, it seems the delay is not needed.
     //QTimer::singleShot(1000, this, &M4Lib::_initSequence);
@@ -414,6 +451,9 @@ M4Lib::tryStartCalibration()
         }
         if(_m4State == M4State::RUN) {
             _exitRun();
+            _helper.msleep(SEND_INTERVAL);
+        } else if(_m4State == M4State::SIM) {
+            _exitSimulation();
             _helper.msleep(SEND_INTERVAL);
         }
         _enterFactoryCalibration();
@@ -483,6 +523,15 @@ M4Lib::_enterRun()
     return _write(cmd, DEBUG_DATA_DUMP);
 }
 
+bool
+M4Lib::_enterSimulation()
+{
+    _helper.logDebug("Sending: CMD_ENTER_SIMULATOR");
+    m4Command enterRunCmd(Yuneec::CMD_ENTER_SIMULATOR);
+    std::vector<uint8_t> cmd = enterRunCmd.pack();
+    return _write(cmd, DEBUG_DATA_DUMP);
+}
+
 /**
  * This command is used for stopping control aircraft.
  */
@@ -491,6 +540,15 @@ M4Lib::_exitRun()
 {
     _helper.logDebug("Sending: CMD_EXIT_RUN");
     m4Command exitRunCmd(Yuneec::CMD_EXIT_RUN);
+    std::vector<uint8_t> cmd = exitRunCmd.pack();
+    return _write(cmd, DEBUG_DATA_DUMP);
+}
+
+bool
+M4Lib::_exitSimulation()
+{
+    _helper.logDebug("Sending: CMD_EXIT_SIMULATOR");
+    m4Command exitRunCmd(Yuneec::CMD_EXIT_SIMULATOR);
     std::vector<uint8_t> cmd = exitRunCmd.pack();
     return _write(cmd, DEBUG_DATA_DUMP);
 }
@@ -714,7 +772,7 @@ M4Lib::_sendTableDeviceLocalInfo(TableDeviceLocalInfo_t localInfo)
 {
     m4Command sendRxResInfoCmd(Yuneec::CMD_SEND_RX_RESINFO);
     std::vector<uint8_t> payload;
-    int len = 11;
+    unsigned int len = 11;
     payload.resize(len);
     std::fill(payload.begin(), payload.end(), 0);
     payload[0]  = localInfo.index;
@@ -745,7 +803,7 @@ M4Lib::_sendTableDeviceChannelInfo(TableDeviceChannelInfo_t channelInfo)
 {
     m4Command sendRxResInfoCmd(Yuneec::CMD_SEND_RX_RESINFO);
     std::vector<uint8_t> payload;
-    int len = sizeof(channelInfo);
+    unsigned int len = sizeof(channelInfo);
     payload.resize(len);
     std::fill(payload.begin(), payload.end(), 0);
     payload[0]  = channelInfo.index;
@@ -787,15 +845,15 @@ M4Lib::_sendTableDeviceChannelNumInfo(ChannelNumType_t channelNumType)
 {
     TableDeviceChannelNumInfo_t channelNumInfo;
     std::memset(&channelNumInfo, 0, sizeof(TableDeviceChannelNumInfo_t));
-    int num =  0;
+    unsigned int num =  0;
     if(_generateTableDeviceChannelNumInfo(&channelNumInfo, channelNumType, num)) {
         m4Command sendRxResInfoCmd(Yuneec::CMD_SEND_RX_RESINFO);
         std::vector<uint8_t> payload;
-        int len = num + 1;
+        unsigned int len = num + 1;
         payload.resize(len);
         std::fill(payload.begin(), payload.end(), 0);
         payload[0] = channelNumInfo.index;
-        for(int i = 0; i < num; i++) {
+        for(unsigned int i = 0; i < num; i++) {
             payload[i + 1] = channelNumInfo.channelMap[i];
         }
         std::vector<uint8_t> cmd = sendRxResInfoCmd.pack(payload);
@@ -814,29 +872,29 @@ M4Lib::_sendTableDeviceChannelNumInfo(ChannelNumType_t channelNumType)
  *
  */
 bool
-M4Lib::_generateTableDeviceChannelNumInfo(TableDeviceChannelNumInfo_t* channelNumInfo, ChannelNumType_t channelNumType, int& num)
+M4Lib::_generateTableDeviceChannelNumInfo(TableDeviceChannelNumInfo_t* channelNumInfo, ChannelNumType_t channelNumType, unsigned int& num)
 {
     switch(channelNumType) {
         case ChannelNumAanlog:
-            num = _rxBindInfoFeedback.aNum;
+            num = static_cast<unsigned int>(_rxBindInfoFeedback.aNum);
             if(!_fillTableDeviceChannelNumMap(channelNumInfo, num, _rxBindInfoFeedback.achName)) {
                 return false;
             }
             break;
         case ChannelNumTrim:
-            num = _rxBindInfoFeedback.trNum;
+            num = static_cast<unsigned int>(_rxBindInfoFeedback.trNum);
             if(!_fillTableDeviceChannelNumMap(channelNumInfo, num, _rxBindInfoFeedback.trName)) {
                 return false;
             }
             break;
         case ChannelNumSwitch:
-            num = _rxBindInfoFeedback.swNum;
+            num = static_cast<unsigned int>(_rxBindInfoFeedback.swNum);
             if(!_fillTableDeviceChannelNumMap(channelNumInfo, num, _rxBindInfoFeedback.swName)) {
                 return false;
             }
             break;
         case ChannelNumMonitor:
-            num = _rxBindInfoFeedback.monitNum;
+            num = static_cast<unsigned int>(_rxBindInfoFeedback.monitNum);
             if(num <= 0) {
                 return false;
             }
@@ -845,7 +903,7 @@ M4Lib::_generateTableDeviceChannelNumInfo(TableDeviceChannelNumInfo_t* channelNu
             }
             break;
         case ChannelNumExtra:
-            num = _rxBindInfoFeedback.extraNum;
+            num = static_cast<unsigned int>(_rxBindInfoFeedback.extraNum);
             if(num <= 0) {
                 return false;
             }
@@ -864,13 +922,13 @@ M4Lib::_generateTableDeviceChannelNumInfo(TableDeviceChannelNumInfo_t* channelNu
  * information from RxBindInfo
  */
 bool
-M4Lib::_fillTableDeviceChannelNumMap(TableDeviceChannelNumInfo_t* channelNumInfo, int num, std::vector<uint8_t> list)
+M4Lib::_fillTableDeviceChannelNumMap(TableDeviceChannelNumInfo_t* channelNumInfo, unsigned int num, std::vector<uint8_t> list)
 {
     bool res = false;
     if(num) {
-        if(num <= int(list.size())) {
+        if(num <= list.size()) {
             channelNumInfo->index = _channelNumIndex;
-            for(int i = 0; i < num; i++) {
+            for(unsigned int i = 0; i < num; i++) {
                 channelNumInfo->channelMap[i] = uint8_t(list[i]);
             }
             res = true;
@@ -888,20 +946,21 @@ void
 M4Lib::_initSequence()
 {
     _responseTryCount = 0;
-    //-- Check and see if we have binding info
-    if(_rxBindInfoFeedback.nodeId) {
-
-        std::stringstream ss;
-        ss << "Previously bound with:" << int(_rxBindInfoFeedback.nodeId) << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
-        _helper.logInfo(ss.str()) ;
-        //-- Initialize M4
-        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
-        _setChannelSetting();
-    } else {
-        //-- First run. Start binding sequence
-        _responseTryCount = 0;
-        _internalM4State = InternalM4State::ENTER_BIND;
-        _enterBind();
+    if(!_slaveMode) {
+        //-- Check and see if we have binding info
+        if(_rxBindInfoFeedback.nodeId) {
+            std::stringstream ss;
+            ss << "Previously bound with:" << int(_rxBindInfoFeedback.nodeId) << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
+            _helper.logInfo(ss.str()) ;
+            //-- Initialize M4
+            _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
+            _setChannelSetting();
+        } else {
+            //-- First run. Start binding sequence
+            _responseTryCount = 0;
+            _internalM4State = InternalM4State::ENTER_BIND;
+            _enterBind();
+        }
     }
     _timer.start(COMMAND_WAIT_INTERVAL);
 }
@@ -942,9 +1001,13 @@ M4Lib::_stateManager()
                     _internalM4State = InternalM4State::ENTER_BIND_ERROR;
                 }
             } else {
-                _enterBind();
-                _timer.start(COMMAND_WAIT_INTERVAL);
-                _responseTryCount++;
+                if(_slaveMode) {
+                    _internalM4State = InternalM4State::NONE;
+                } else {
+                    _enterBind();
+                    _timer.start(COMMAND_WAIT_INTERVAL);
+                    _responseTryCount++;
+                }
             }
             break;
         case InternalM4State::START_BIND:
@@ -1035,6 +1098,26 @@ M4Lib::_stateManager()
                 _responseTryCount++;
             }
             break;
+        case InternalM4State::ENTER_SIMULATION:
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
+                _helper.logWarn("Too many STATE_ENTER_SIMULATION Timeouts. Giving up...");
+            } else {
+                _helper.logInfo("STATE_ENTER_SIMULATION Timeout");
+                _enterSimulation();
+                _timer.start(COMMAND_WAIT_INTERVAL);
+                _responseTryCount++;
+            }
+            break;
+        case InternalM4State::EXIT_SIMULATION:
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
+                _helper.logWarn("Too many STATE_EXIT_SIMULATION Timeouts. Giving up...");
+            } else {
+                _helper.logInfo("STATE_EXIT_SIMULATION Timeout");
+                _exitSimulation();
+                _timer.start(COMMAND_WAIT_INTERVAL);
+                _responseTryCount++;
+            }
+            break;
         default:
             std::stringstream ss;
             ss << "Timeout:" << static_cast<int>(_internalM4State);
@@ -1112,11 +1195,11 @@ void
 M4Lib::_generateTableDeviceLocalInfo(TableDeviceLocalInfo_t* localInfo)
 {
     localInfo->index        = _rxLocalIndex;
-    localInfo->mode         = _rxBindInfoFeedback.mode;
-    localInfo->nodeId       = _rxBindInfoFeedback.nodeId;
+    localInfo->mode         = static_cast<uint16_t>(_rxBindInfoFeedback.mode);
+    localInfo->nodeId       = static_cast<uint16_t>(_rxBindInfoFeedback.nodeId);
     localInfo->parseIndex   = _rxchannelInfoIndex - 1;
-    localInfo->panId        = _rxBindInfoFeedback.panId;
-    localInfo->txAddr       = _rxBindInfoFeedback.txAddr;
+    localInfo->panId        = static_cast<uint16_t>(_rxBindInfoFeedback.panId);
+    localInfo->txAddr       = static_cast<uint16_t>(_rxBindInfoFeedback.txAddr);
     _rxLocalIndex++;
 }
 
@@ -1128,18 +1211,18 @@ bool
 M4Lib::_generateTableDeviceChannelInfo(TableDeviceChannelInfo_t* channelInfo)
 {
     channelInfo->index              = _rxchannelInfoIndex;
-    channelInfo->aNum               = _rxBindInfoFeedback.aNum;
-    channelInfo->aBits              = _rxBindInfoFeedback.aBit;
-    channelInfo->trNum              = _rxBindInfoFeedback.trNum;
-    channelInfo->trBits             = _rxBindInfoFeedback.trBit;
-    channelInfo->swNum              = _rxBindInfoFeedback.swNum;
-    channelInfo->swBits             = _rxBindInfoFeedback.swBit;
-    channelInfo->replyChannelNum    = _rxBindInfoFeedback.monitNum;
-    channelInfo->replyChannelBits   = _rxBindInfoFeedback.monitBit;
-    channelInfo->requestChannelNum  = _rxBindInfoFeedback.monitNum;
-    channelInfo->requestChannelBits = _rxBindInfoFeedback.monitBit;
-    channelInfo->extraNum           = _rxBindInfoFeedback.extraNum;
-    channelInfo->extraBits          = _rxBindInfoFeedback.extraBit;
+    channelInfo->aNum               = static_cast<uint8_t>(_rxBindInfoFeedback.aNum);
+    channelInfo->aBits              = static_cast<uint8_t>(_rxBindInfoFeedback.aBit);
+    channelInfo->trNum              = static_cast<uint8_t>(_rxBindInfoFeedback.trNum);
+    channelInfo->trBits             = static_cast<uint8_t>(_rxBindInfoFeedback.trBit);
+    channelInfo->swNum              = static_cast<uint8_t>(_rxBindInfoFeedback.swNum);
+    channelInfo->swBits             = static_cast<uint8_t>(_rxBindInfoFeedback.swBit);
+    channelInfo->replyChannelNum    = static_cast<uint8_t>(_rxBindInfoFeedback.monitNum);
+    channelInfo->replyChannelBits   = static_cast<uint8_t>(_rxBindInfoFeedback.monitBit);
+    channelInfo->requestChannelNum  = static_cast<uint8_t>(_rxBindInfoFeedback.monitNum);
+    channelInfo->requestChannelBits = static_cast<uint8_t>(_rxBindInfoFeedback.monitBit);
+    channelInfo->extraNum           = static_cast<uint8_t>(_rxBindInfoFeedback.extraNum);
+    channelInfo->extraBits          = static_cast<uint8_t>(_rxBindInfoFeedback.extraBit);
     if(!_sendTableDeviceChannelNumInfo(ChannelNumAanlog)) {
         return false;
     }
@@ -1176,14 +1259,16 @@ void
 M4Lib::_initAndCheckBinding()
 {
 #if defined(__androidx86__)
-    //-- First boot, not bound
-    if(_m4State != M4State::RUN) {
-        enterBindMode();
-    //-- RC is bound to something. Is it bound to whoever we are connected?
-    } else if(!_rcActive) {
-        enterBindMode();
-    } else {
-        _helper.logInfo("In RUN mode and RC ready");
+    if(!_slaveMode) {
+        //-- First boot, not bound
+        if(_m4State != M4State::RUN) {
+            enterBindMode();
+        //-- RC is bound to something. Is it bound to whoever we are connected?
+        } else if(!_rcActive) {
+            enterBindMode();
+        } else {
+            _helper.logInfo("In RUN mode and RC ready");
+        }
     }
 #endif
 }
@@ -1255,6 +1340,10 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                         //-- Now we start initsequence
                         _initSequence();
                     }
+                    break;
+                case Yuneec::CMD_EXIT_SIMULATOR:
+                    //-- Response from _exitSimulation()
+                    _helper.logDebug("Received TYPE_RSP: CMD_EXIT_SIMULATOR");
                     break;
                 case Yuneec::CMD_ENTER_BIND:
                     //-- Response from _enterBind()
@@ -1368,6 +1457,19 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                             } else {
                                 _helper.logInfo("M4 ready, in run state.");
                             }
+                        }
+                    }
+                    break;
+                case Yuneec::CMD_ENTER_SIMULATOR: {
+                        //-- Response from _enterSimulation()
+                        _helper.logDebug("Received TYPE_RSP: CMD_ENTER_SIMULATOR");
+                        std::stringstream ss;
+                        ss << "State: " << int(_internalM4State);
+                        _helper.logDebug(ss.str());
+                        if(_internalM4State == InternalM4State::ENTER_SIMULATION) {
+                            _internalM4State = InternalM4State::RUNNING_SIMULATION;
+                            _timer.stop();
+                            _helper.logInfo("M4 ready, in simulation state.");
                         }
                     }
                     break;
@@ -1551,7 +1653,7 @@ M4Lib::_handleRxBindInfo(m4Packet& packet)
         _rxBindInfoFeedback.monitBit = uint8_t(packet.data[27]);
         _rxBindInfoFeedback.extraNum = uint8_t(packet.data[28]);
         _rxBindInfoFeedback.extraBit = uint8_t(packet.data[29]);
-        int ilen = 30;
+        unsigned int ilen = 30;
         _rxBindInfoFeedback.achName.clear();
         for(int i = 0; i < _rxBindInfoFeedback.aNum ; i++) {
             _rxBindInfoFeedback.achName.push_back(uint8_t(packet.data[ilen++]));
@@ -1572,7 +1674,7 @@ M4Lib::_handleRxBindInfo(m4Packet& packet)
         for(int i = 0; i < _rxBindInfoFeedback.extraNum ; i++) {
             _rxBindInfoFeedback.extraName.push_back(uint8_t(packet.data[ilen++]));
         }
-        int p = packet.data.size() - 2;
+        unsigned int p = packet.data.size() - 2;
         _rxBindInfoFeedback.txAddr = (uint8_t(packet.data[p]) & 0xff) | (uint8_t(packet.data[p + 1]) << 8 & 0xff00);
         std::stringstream ss;
         ss << "RxBindInfo:" << _getRxBindInfoFeedbackName() << _rxBindInfoFeedback.nodeId;
@@ -1764,7 +1866,7 @@ M4Lib::_calibrationStateChanged(m4Packet &packet)
     bool state  = true;
     bool change = false;
     std::vector<uint8_t> commandValues = packet.commandValues();
-    for (int i = CalibrationHwIndexJ1; i < CalibrationHwIndexMax; ++i) {
+    for (unsigned int i = CalibrationHwIndexJ1; i < CalibrationHwIndexMax; ++i) {
         if(_rawChannelsCalibration[i] != commandValues[i]) {
             _rawChannelsCalibration[i] = commandValues[i];
             change = true;
@@ -1804,29 +1906,27 @@ M4Lib::_handleRawChannelData(m4Packet& packet)
 {
     std::vector<uint8_t> values = packet.commandValues();
     int analogChannelCount = _rxBindInfoFeedback.aNum  ? _rxBindInfoFeedback.aNum  : 10;
-    int val1, val2, startIndex;
+    int val1, val2;
     _rawChannels.clear();
     for(int i = 0; i < analogChannelCount; i++) {
         uint16_t value = 0;
-        startIndex = int(std::floor(i * 1.5));
-        val1 = values[startIndex] & 0xff;
-        val2 = values[startIndex + 1] & 0xff;
+        unsigned int index = static_cast<unsigned int>(std::floor(i * 1.5));
+        val1 = values[index] & 0xff;
+        val2 = values[index + 1] & 0xff;
         if(i % 2 == 0) {
-            value = val1 << 4 | val2 >> 4;
+            value = static_cast<uint16_t>(val1 << 4 | val2 >> 4);
         } else {
-            value = (val1 & 0x0f) << 8 | val2;
+            value = static_cast<uint16_t>((val1 & 0x0f) << 8 | val2);
         }
         _rawChannels.push_back(value);
     }
     if (_rawChannelsChangedCallback) {
         _rawChannelsChangedCallback();
     }
-
 #if 0
     std::stringstream ss;
     ss << "Raw channels ( " << int(analogChannelCount) << ")";
     _helper.logInfo(ss.str());
-
     ss.clear();
     for(int i = 0; i < _rawChannels.size(); i++) {
         ss << int(_rawChannels[i]);
@@ -1841,31 +1941,24 @@ M4Lib::_handleRawChannelData(m4Packet& packet)
 void
 M4Lib::_handleMixedChannelData(m4Packet& packet)
 {
-    UNUSED(packet);
-//-- TODO:get the mixed RC value packet and callback function in M4interface
-#ifdef DISABLE_ZIGBEE
     std::vector<uint8_t> values = packet.commandValues();
-    _sendRCChannelCallback(values);
-#endif
-#if 0
-    // FIXME: this does not seem to be used.
-    int analogChannelCount = _rxBindInfoFeedback.aNum  ? _rxBindInfoFeedback.aNum  : 10;
-    int switchChannelCount = _rxBindInfoFeedback.swNum ? _rxBindInfoFeedback.swNum : 2;
-    std::vector<uint8_t> values = packet.commandValues();
-    int value, val1, val2, startIndex;
-    std::vector<uint8_t> channels;
+    _mixedChannels.clear();
+    int analogChannelCount = 10;
+    int switchChannelCount = 2;
+    unsigned int value, val1, val2;
     for(int i = 0; i < analogChannelCount + switchChannelCount; i++) {
         if(i < analogChannelCount) {
-            startIndex = (int)floor(i * 1.5);
-            val1 = values[startIndex] & 0xff;
-            val2 = values[startIndex + 1] & 0xff;
+            unsigned int index = static_cast<unsigned int>(floor(i * 1.5));
+            val1 = values[index] & 0xff;
+            val2 = values[index + 1] & 0xff;
             if(i % 2 == 0) {
                 value = val1 << 4 | val2 >> 4;
             } else {
                 value = (val1 & 0x0f) << 8 | val2;
             }
         } else {
-            val1 = values[(int)(ceil((analogChannelCount - 1) * 1.5) + ceil((i - analogChannelCount + 1) * 0.25f))] & 0xff;
+            unsigned int index = static_cast<unsigned int>(ceil((analogChannelCount - 1) * 1.5) + ceil((i - analogChannelCount + 1) * 0.25));
+            val1 = values[index] & 0xff;
             switch((i - analogChannelCount + 1) % 4) {
                 case 1:
                     value = val1 >> 6 & 0x03;
@@ -1884,14 +1977,16 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
                     break;
             }
         }
-        channels.push_back(value);
+        _mixedChannels.push_back(static_cast<uint16_t>(value));
     }
-
+    if(_mixedChannelsChangedCallback) {
+        _mixedChannelsChangedCallback();
+    }
+#if 0
     std::stringstream ss;
-    ss << "Mixed channels (" << int(channels.size()) << ")";
-
-    for(int i = 0; i < channels.size(); i++) {
-        ss << int(channels[i]) << ", ";
+    ss << "Mixed channels (" << int(_mixedChannels.size()) << ")";
+    for(unsigned int i = 0; i < _mixedChannels.size(); i++) {
+        ss << int(_mixedChannels[i]) << ", ";
     }
     _helper.logInfo(ss.str());
 #endif
@@ -1949,17 +2044,15 @@ M4Lib::m4StateStr()
             return std::string("Simulation...");
         case M4State::FACTORY_CAL:
             return std::string("Factory Calibration...");
-        default:
-            return std::string("Unknown state...");
     }
     return std::string();
 }
 
 int
-M4Lib::_byteArrayToInt(std::vector<uint8_t> data, int offset, bool isBigEndian)
+M4Lib::_byteArrayToInt(std::vector<uint8_t> data, unsigned int offset, bool isBigEndian)
 {
     int iRetVal = -1;
-    if(int(data.size()) < offset + 4) {
+    if(data.size() < offset + 4) {
         return iRetVal;
     }
     int iLowest;
@@ -1982,10 +2075,10 @@ M4Lib::_byteArrayToInt(std::vector<uint8_t> data, int offset, bool isBigEndian)
 }
 
 short
-M4Lib::_byteArrayToShort(std::vector<uint8_t> data, int offset, bool isBigEndian)
+M4Lib::_byteArrayToShort(std::vector<uint8_t> data, unsigned int offset, bool isBigEndian)
 {
     short iRetVal = -1;
-    if(int(data.size()) < offset + 2) {
+    if(data.size() < offset + 2) {
         return iRetVal;
     }
     int iLow;
@@ -1997,7 +2090,7 @@ M4Lib::_byteArrayToShort(std::vector<uint8_t> data, int offset, bool isBigEndian
         iLow    = data[offset + 0];
         iHigh   = data[offset + 1];
     }
-    iRetVal = (iHigh << 8) | (0xFF & iLow);
+    iRetVal = static_cast<short>((iHigh << 8) | (0xFF & iLow));
     return iRetVal;
 }
 

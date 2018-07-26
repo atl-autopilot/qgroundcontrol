@@ -149,13 +149,10 @@ public:
     void setCalibrationCompleteChangedCallback(std::function<void()> callback);
     void setCalibrationStateChangedCallback(std::function<void()> callback);
     void setRawChannelsChangedCallback(std::function<void()> callback);
+    void setMixedChannelsChangedCallback(std::function<void()> callback);
     void setControllerLocationChangedCallback(std::function<void()> callback);
     void setM4StateChangedCallback(std::function<void()> callback);
     void setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)> callback);
-    //We don't use zigbee for sending upstream data if "DISABLE_ZIGBEE" is defined
-#ifdef DISABLE_ZIGBEE
-    void sendRCChannelCallback(std::function<void(std::vector<uint8_t>)> callback);
-#endif
     void setSettings(const RxBindInfo& rxBindInfo);
     void setVersionCallback(std::function<void(int, int, int)> callback);
     bool getVersion();
@@ -172,6 +169,7 @@ public:
     void setVehicleConnected(bool vehicleConnected);
 
     std::vector<uint16_t> getRawChannels();
+    std::vector<uint16_t> getMixedChannels();
 
     const ControllerLocation& getControllerLocation();
 
@@ -181,6 +179,9 @@ public:
 
     void resetBind();
     void enterBindMode(bool skipPairCommand = false);
+
+    void enterSlaveMode ();
+    void exitSlaveMode  ();
 
     bool isVehicleReady();
     void checkVehicleReady();
@@ -213,6 +214,8 @@ private:
     void _tryEnterBindMode();
     bool _exitToAwait();
     bool _enterRun();
+    bool _enterSimulation();
+    bool _exitSimulation();
     bool _exitRun();
     bool _enterBind();
     bool _enterFactoryCalibration();
@@ -234,8 +237,8 @@ private:
 
     bool _sendPassthroughMessage(std::vector<uint8_t> message);
 
-    bool _generateTableDeviceChannelNumInfo(TableDeviceChannelNumInfo_t* channelNumInfo, ChannelNumType_t channelNumType, int& num);
-    bool _fillTableDeviceChannelNumMap       (TableDeviceChannelNumInfo_t *channelNumInfo, int num, std::vector<uint8_t> list);
+    bool _generateTableDeviceChannelNumInfo(TableDeviceChannelNumInfo_t* channelNumInfo, ChannelNumType_t channelNumType, unsigned int& num);
+    bool _fillTableDeviceChannelNumMap       (TableDeviceChannelNumInfo_t *channelNumInfo, unsigned int num, std::vector<uint8_t> list);
     void _generateTableDeviceLocalInfo       (TableDeviceLocalInfo_t *localInfo);
     bool _generateTableDeviceChannelInfo     (TableDeviceChannelInfo_t *channelInfo);
 
@@ -254,8 +257,8 @@ private:
     std::string _getRxBindInfoFeedbackName   ();
     bool _tryGetVersion                      ();
 
-    static  int     _byteArrayToInt  (std::vector<uint8_t> data, int offset, bool isBigEndian = false);
-    static  short   _byteArrayToShort(std::vector<uint8_t> data, int offset, bool isBigEndian = false);
+    static  int     _byteArrayToInt  (std::vector<uint8_t> data, unsigned int offset, bool isBigEndian = false);
+    static  short   _byteArrayToShort(std::vector<uint8_t> data, unsigned int offset, bool isBigEndian = false);
 
     M4SerialComm* _commPort;
 
@@ -278,6 +281,9 @@ private:
         MIX_CHANNEL_ADD,
         SEND_RX_INFO,
         ENTER_RUN,
+        ENTER_SIMULATION,
+        EXIT_SIMULATION,
+        RUNNING_SIMULATION,
         RUNNING
     };
 
@@ -293,15 +299,12 @@ private:
     std::function<void()> _calibrationCompleteChangedCallback = nullptr;
     std::function<void()> _calibrationStateChangedCallback = nullptr;
     std::function<void()> _rawChannelsChangedCallback = nullptr;
+    std::function<void()> _mixedChannelsChangedCallback = nullptr;
     std::function<void()> _controllerLocationChangedCallback = nullptr;
     std::function<void()> _m4StateChangedCallback = nullptr;
     std::function<void(const RxBindInfo&)> _saveSettingsCallback = nullptr;
     // A version of -1.-1.-1 means the request timed out.
     std::function<void(int, int, int)> _versionCallback = nullptr;
-#ifdef DISABLE_ZIGBEE
-    bool _skipBind;
-    std::function<void(std::vector<uint8_t>)> _sendRCChannelCallback=nullptr;
-#endif
     int                     _responseTryCount;
     M4State                 _m4State;
     InternalM4State         _internalM4State;
@@ -318,7 +321,9 @@ private:
     bool                    _rcCalibrationComplete;
     bool                    _vehicleConnected;
     bool                    _binding;
+    bool                    _slaveMode;
     std::vector<uint16_t>   _rawChannels;
+    std::vector<uint16_t>   _mixedChannels;
     ControllerLocation      _controllerLocation;
     int                     _tryGetVersionCount {0};
 #endif // defined(__androidx86__)

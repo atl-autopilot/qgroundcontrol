@@ -298,6 +298,8 @@ enum {
         CMD_EXIT_FACTORY_CAL            = 0xA0,
         CMD_CALIBRATION_STATE_CHANGE    = 0x96,
 
+        CMD_ENTER_SIMULATOR             = 0x72,
+        CMD_EXIT_SIMULATOR              = 0x73,
         CMD_TX_CHANNEL_DATA_RAW         = 0x77,
         CMD_TX_CHANNEL_DATA_MIXED       = 0x78,
         CMD_TX_STATE_MACHINE            = 0x83,
