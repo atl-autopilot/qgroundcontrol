@@ -326,6 +326,11 @@ private:
     std::vector<uint16_t>   _mixedChannels;
     ControllerLocation      _controllerLocation;
     int                     _tryGetVersionCount {0};
+
+#ifdef DISABLE_ZIGBEE
+    bool                    _skipBind;
+#endif
+
 #endif // defined(__androidx86__)
 };
 
