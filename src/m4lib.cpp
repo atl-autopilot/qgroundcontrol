@@ -60,9 +60,6 @@ M4Lib::M4Lib(
     : _timer(timer)
     , _versionTimer(versionTimer)
     , _helper(helper)
-    #ifdef DISABLE_ZIGBEE
-    , _skipBind(false)
-    #endif
     , _responseTryCount(0)
     , _m4State(M4State::NONE)
     , _internalM4State(InternalM4State::NONE)
@@ -74,6 +71,9 @@ M4Lib::M4Lib(
     , _vehicleConnected(false)
     , _binding(false)
     , _slaveMode(false)
+    #ifdef DISABLE_ZIGBEE
+    , _skipBind(false)
+    #endif
 {
     _commPort = new M4SerialComm(_helper);
     _commPort->setBytesReadyCallback(std::bind(&M4Lib::_bytesReady, this, std::placeholders::_1));
