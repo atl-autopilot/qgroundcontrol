@@ -354,6 +354,10 @@ M4Lib::enterSlaveMode()
     //_helper.msleep(SEND_INTERVAL);
     //_internalM4State = InternalM4State::ENTER_SIMULATION;
     //_enterSimulation();
+
+    _exitRun();
+    _helper.msleep(SEND_INTERVAL);
+    _sendRecvBothCh();
 }
 
 void
@@ -1377,6 +1381,11 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_RECV_BOTH_CH:
                     //-- Response from _sendRecvBothCh()
                     _helper.logDebug("Received TYPE_RSP: CMD_RECV_BOTH_CH");
+                    //If we want to receive the mixed channel from m4, we need to send channel mapping table to m4 first.
+                    _internalM4State = InternalM4State::MIX_CHANNEL_ADD;
+                    _currentChannelAdd = 0;
+                    _syncMixingDataAdd();
+                    _timer.start(COMMAND_WAIT_INTERVAL);
                     break;
                 case Yuneec::CMD_RECV_RAW_CH_ONLY:
                     //-- Response from _sendRecvRawCh()
@@ -1420,7 +1429,13 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                                 _timer.stop();
                             }
 #endif
-                            else {
+                            else if (_slaveMode){
+                                _helper.logDebug("After sending all channel mapping in slave mode, just switch m4 to running state.");
+                                _internalM4State = InternalM4State::ENTER_RUN;
+                                _responseTryCount = 0;
+                                _enterRun();
+                                _timer.start(COMMAND_WAIT_INTERVAL);
+                            } else {
                                 _responseTryCount = 0;
                                 _internalM4State = InternalM4State::SEND_RX_INFO;
                                 _sendRxResInfo();
