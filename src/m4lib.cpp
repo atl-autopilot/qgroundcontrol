@@ -354,8 +354,9 @@ M4Lib::enterSlaveMode()
     //_helper.msleep(SEND_INTERVAL);
     //_internalM4State = InternalM4State::ENTER_SIMULATION;
     //_enterSimulation();
-
+    
     _exitRun();
+    //Mode switching need cost a "SEND_INTERVAL" time, if we send a command immediately next, no sleeps, it may fail to send.
     _helper.msleep(SEND_INTERVAL);
     _sendRecvBothCh();
 }
@@ -367,6 +368,7 @@ M4Lib::exitSlaveMode()
     //_internalM4State = InternalM4State::EXIT_SIMULATION;
     //_exitSimulation();
     _exitRun();
+    //Mode switching need cost a "SEND_INTERVAL" time, if we send a command immediately next, no sleeps, it may fail to send.
     _helper.msleep(SEND_INTERVAL);
     _sendRecvRawCh();
     _enterRun();
