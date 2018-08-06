@@ -366,6 +366,11 @@ M4Lib::exitSlaveMode()
     _slaveMode = false;
     //_internalM4State = InternalM4State::EXIT_SIMULATION;
     //_exitSimulation();
+    _exitRun();
+    _helper.msleep(SEND_INTERVAL);
+    _sendRecvRawCh();
+    _enterRun();
+    _helper.msleep(SEND_INTERVAL);
 }
 
 void
