@@ -62,6 +62,7 @@ M4Lib::M4Lib(
     , _helper(helper)
     , _responseTryCount(0)
     , _m4State(M4State::NONE)
+    , _m4IntentState(M4State::NONE)
     , _internalM4State(InternalM4State::NONE)
     , _currentChannelAdd(0)
     , _rxLocalIndex(0)
@@ -69,7 +70,6 @@ M4Lib::M4Lib(
     , _rcActive(false)
     , _rcCalibrationComplete(true)
     , _vehicleConnected(false)
-    , _binding(false)
     , _slaveMode(false)
     #ifdef DISABLE_ZIGBEE
     , _skipBind(false)
@@ -177,30 +177,17 @@ M4Lib::init()
         //-- TODO: If this ever happens, we need to do something about it
         _helper.logWarn("Could not start serial communication with M4");
     }
-//-- We don't use zigbee in some projects, so skip binding zigbee and clear the mixing data
+    setPowerKey(Yuneec::BIND_KEY_FUNCTION_PWR);
+//-- We don't use zigbee in some projects, so skip binding zigbee.
 #ifdef DISABLE_ZIGBEE
     _skipBind = true;
-    if(_skipBind) { //-- With this being set above to true, what's the point of the test?
-       _internalM4State = InternalM4State::MIX_CHANNEL_DELETE;
-       _syncMixingDataDeleteAll();
-    } else {
-       setPowerKey(Yuneec::BIND_KEY_FUNCTION_PWR);
-    }
 #else
-    setPowerKey(Yuneec::BIND_KEY_FUNCTION_PWR);
-#endif
-    _helper.msleep(SEND_INTERVAL);
-#if 1
     //-- Tell ST16 to send raw channel data (to app)
     _sendRecvRawCh();
-#else
-    //-- Tell ST16 to send both raw and mixed channel data (to app)
-    _sendRecvBothCh();
 #endif
-    _helper.msleep(SEND_INTERVAL);
-    //-- Start sending data
-    _enterRun();
-    _helper.msleep(SEND_INTERVAL);
+    //We need to switch m4 to await state first, then decide the next step in _initSequence().
+    _m4IntentState = M4State::RUN;
+    _exitToAwait();
 #endif
 }
 
@@ -341,27 +328,25 @@ M4Lib::resetBind()
 void
 M4Lib::enterSlaveMode()
 {
-    _binding = false;
     _slaveMode = true;
-    //
-    //   TODO: When switching to "simulation" mode, something is causing
-    //   a crash. It's not related to the M4. Something received from it
-    //   is probably different and some handler is crashing because of it.
-    //   I have not been able to get stack traces during debug, which
-    //   makes it hard to find where the crash occurs.
-    //
-    //_exitRun();
-    //_helper.msleep(SEND_INTERVAL);
-    //_internalM4State = InternalM4State::ENTER_SIMULATION;
-    //_enterSimulation();
+    _m4IntentState = M4State::RUN;
+//If we disable zigbee, we don't need to do anything for entering slave mode.
+#ifndef DISABLE_ZIGBEE
+    //If we would to make m4 enter simulate state to enable mixed channel,
+    //we can set "_m4IntentState" to "M4State::SIM".
+    //_m4IntentState = M4State::SIM;
+    _exitToAwait();
+#endif
 }
 
 void
 M4Lib::exitSlaveMode()
 {
     _slaveMode = false;
-    //_internalM4State = InternalM4State::EXIT_SIMULATION;
-    //_exitSimulation();
+    _m4IntentState = M4State::RUN;
+#ifndef DISABLE_ZIGBEE
+    _exitToAwait();
+#endif
 }
 
 void
@@ -389,7 +374,6 @@ M4Lib::enterBindMode(bool skipPairCommand)
             return;
         }
 
-        _binding = true;
         _pairCommandCallback();
     }
     _tryEnterBindMode();
@@ -400,16 +384,9 @@ M4Lib::_tryEnterBindMode()
 {
     //-- Set M4 into bind mode
     _rxBindInfoFeedback = {};
-    if(_m4State == M4State::BIND) {
-        _exitBind();
-    } else if(_m4State == M4State::RUN) {
-        _exitRun();
-    } else if(_m4State == M4State::SIM) {
-        _exitSimulation();
-    }
-    // TODO: check this, it seems the delay is not needed.
-    //QTimer::singleShot(1000, this, &M4Lib::_initSequence);
-    _initSequence();
+    //Before entering bind mode, we need to exit to await state, then enter to bind mode in _initSequence().
+    _m4IntentState = M4State::RUN;
+    _exitToAwait();
 }
 
 bool
@@ -449,14 +426,8 @@ M4Lib::tryStartCalibration()
         if (_calibrationStateChangedCallback) {
             _calibrationStateChangedCallback();
         }
-        if(_m4State == M4State::RUN) {
-            _exitRun();
-            _helper.msleep(SEND_INTERVAL);
-        } else if(_m4State == M4State::SIM) {
-            _exitSimulation();
-            _helper.msleep(SEND_INTERVAL);
-        }
-        _enterFactoryCalibration();
+        _m4IntentState = M4State::FACTORY_CAL;
+        _exitToAwait();
     }
 }
 
@@ -464,7 +435,8 @@ void
 M4Lib::tryStopCalibration()
 {
     if(_m4State == M4State::FACTORY_CAL) {
-        _exitFactoryCalibration();
+        _m4IntentState = M4State::AWAIT;
+        _exitToAwait();
     }
 }
 
@@ -483,6 +455,7 @@ M4Lib::softReboot()
         _responseTryCount   = 0;
         _currentChannelAdd  = 0;
         _m4State            = M4State::NONE;
+        _m4IntentState      = M4State::NONE;
         _rxLocalIndex       = 0;
         _sendRxInfoEnd      = false;
         _rxchannelInfoIndex = 2;
@@ -498,15 +471,48 @@ M4Lib::softReboot()
 }
 
 /**
- * Exit to Await (?)
+ * Exit to await state.
  */
 bool
 M4Lib::_exitToAwait()
 {
-    _helper.logDebug("Sending: CMD_EXIT_TO_AWAIT");
-    m4Command exitToAwaitCmd(Yuneec::CMD_EXIT_TO_AWAIT);
-    std::vector<uint8_t> cmd = exitToAwaitCmd.pack();
-    return _write(cmd, DEBUG_DATA_DUMP);
+    bool result = false;
+    std::stringstream ss;
+    ss << "Exit to await state, Current State:" << m4StateStr() << "(" << int(_m4State) << ")";
+    _helper.logDebug(ss.str());
+    switch (_m4State) {
+        case M4State::BIND:
+            _internalM4State = InternalM4State::EXIT_BIND;
+            result = _exitBind();
+            _responseTryCount = 0;
+            _timer.start(COMMAND_WAIT_INTERVAL);
+            break;
+        case M4State::RUN:
+            _internalM4State = InternalM4State::EXIT_RUN;
+            result = _exitRun();
+            _responseTryCount = 0;
+            _timer.start(COMMAND_WAIT_INTERVAL);
+            break;
+        case M4State::FACTORY_CAL:
+            _internalM4State = InternalM4State::EXIT_FACTORY_CAL;
+            result = _exitFactoryCalibration();
+            _responseTryCount = 0;
+            _timer.start(COMMAND_WAIT_INTERVAL);
+            break;
+        case M4State::SIM:
+            _internalM4State = InternalM4State::EXIT_SIMULATION;
+            result = _exitSimulation();
+            _responseTryCount = 0;
+            _timer.start(COMMAND_WAIT_INTERVAL);
+            break;
+        case M4State::AWAIT:
+            _initSequence();
+            result = true;
+            break;
+        default:
+            result = false;
+    }
+    return result;
 }
 
 /**
@@ -945,24 +951,52 @@ M4Lib::_fillTableDeviceChannelNumMap(TableDeviceChannelNumInfo_t* channelNumInfo
 void
 M4Lib::_initSequence()
 {
-    _responseTryCount = 0;
-    if(!_slaveMode) {
-        //-- Check and see if we have binding info
-        if(_rxBindInfoFeedback.nodeId) {
-            std::stringstream ss;
-            ss << "Previously bound with:" << int(_rxBindInfoFeedback.nodeId) << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
-            _helper.logInfo(ss.str()) ;
-            //-- Initialize M4
-            _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
-            _setChannelSetting();
-        } else {
-            //-- First run. Start binding sequence
+    switch (_m4IntentState) {
+    case M4State::AWAIT:
+        _helper.logInfo("Intent to await(idle) state, nothing need to do.");
+        break;
+    case M4State::RUN:
+        _helper.logInfo("Intent to RUN state, start config channel or binding.");
+#ifdef DISABLE_ZIGBEE
+        if(_skipBind || _slaveMode) {
+#else
+        if (_slaveMode){
+#endif
+            _sendRecvBothCh();
+        }else {
             _responseTryCount = 0;
-            _internalM4State = InternalM4State::ENTER_BIND;
-            _enterBind();
+            //-- Check and see if we have binding info
+            if(_rxBindInfoFeedback.nodeId) {
+                std::stringstream ss;
+                ss << "Previously bound with:" << int(_rxBindInfoFeedback.nodeId) << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
+                _helper.logInfo(ss.str()) ;
+                //-- Initialize M4
+                _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
+                _setChannelSetting();
+            } else {
+                //-- First run. Start binding sequence
+                _responseTryCount = 0;
+                _internalM4State = InternalM4State::ENTER_BIND;
+                _enterBind();
+            }
+            _timer.start(COMMAND_WAIT_INTERVAL);
         }
+        break;
+    case M4State::FACTORY_CAL:
+        _helper.logInfo("Intent to FACTORY_CAL state, just enter FACTORY_CAL state.");
+        _responseTryCount = 0;
+        _internalM4State = InternalM4State::ENTER_FACTORY_CAL;
+        _enterFactoryCalibration();
+        break;
+    case M4State::SIM:
+        _helper.logInfo("Intent to SIM state, just enter simulation state.");
+        _responseTryCount = 0;
+        _internalM4State = InternalM4State::ENTER_SIMULATION;
+        _enterSimulation();
+        break;
+    default:
+        break;
     }
-    _timer.start(COMMAND_WAIT_INTERVAL);
 }
 
 /*
@@ -1111,9 +1145,21 @@ M4Lib::_stateManager()
         case InternalM4State::EXIT_SIMULATION:
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logWarn("Too many STATE_EXIT_SIMULATION Timeouts. Giving up...");
+                _initSequence();
             } else {
                 _helper.logInfo("STATE_EXIT_SIMULATION Timeout");
                 _exitSimulation();
+                _timer.start(COMMAND_WAIT_INTERVAL);
+                _responseTryCount++;
+            }
+            break;
+        case InternalM4State::EXIT_FACTORY_CAL:
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
+                _helper.logWarn("Too many EXIT_FACTORY_CAL Timeouts. Giving up...");
+                _initSequence();
+            } else {
+                _helper.logInfo("EXIT_FACTORY_CAL Timeout");
+                _exitFactoryCalibration();
                 _timer.start(COMMAND_WAIT_INTERVAL);
                 _responseTryCount++;
             }
@@ -1344,6 +1390,10 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_EXIT_SIMULATOR:
                     //-- Response from _exitSimulation()
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_SIMULATOR");
+                    if(_internalM4State == InternalM4State::EXIT_SIMULATION) {
+                        //-- Now we start initsequence
+                        _initSequence();
+                    }
                     break;
                 case Yuneec::CMD_ENTER_BIND:
                     //-- Response from _enterBind()
@@ -1377,6 +1427,11 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_RECV_BOTH_CH:
                     //-- Response from _sendRecvBothCh()
                     _helper.logDebug("Received TYPE_RSP: CMD_RECV_BOTH_CH");
+                    //If we want to receive the mixed channel from m4, we need to send channel mapping table to m4 first.
+                    _internalM4State = InternalM4State::MIX_CHANNEL_ADD;
+                    _currentChannelAdd = 0;
+                    _syncMixingDataAdd();
+                    _timer.start(COMMAND_WAIT_INTERVAL);
                     break;
                 case Yuneec::CMD_RECV_RAW_CH_ONLY:
                     //-- Response from _sendRecvRawCh()
@@ -1412,15 +1467,17 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                                 _syncMixingDataAdd();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
                             }
-//-- TODO:let M4 send mixed RC channel after mixing data is added
 #ifdef DISABLE_ZIGBEE
-                            else if(_skipBind) {
-                                _helper.logDebug("Channel mapping updated successfully, now Joystick is running");
-                                _internalM4State = InternalM4State::RUNNING;
-                                _timer.stop();
-                            }
+                            else if(_skipBind || _slaveMode) {
+#else
+                            else if (_slaveMode){
 #endif
-                            else {
+                                _helper.logDebug("After sending all channel mapping in slave mode, just switch m4 to running state.");
+                                _internalM4State = InternalM4State::ENTER_RUN;
+                                _responseTryCount = 0;
+                                _enterRun();
+                                _timer.start(COMMAND_WAIT_INTERVAL);
+                            } else {
                                 _responseTryCount = 0;
                                 _internalM4State = InternalM4State::SEND_RX_INFO;
                                 _sendRxResInfo();
@@ -1448,15 +1505,7 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                         if(_internalM4State == InternalM4State::ENTER_RUN) {
                             _internalM4State = InternalM4State::RUNNING;
                             _timer.stop();
-                            if(_binding) {
-                                _binding = false;
-                                _helper.logInfo("Soft reboot...");
-                                // TODO: check this, it seems the delay is not needed.
-                                //QTimer::singleShot(1000, this, &M4Lib::softReboot);
-                                softReboot();
-                            } else {
-                                _helper.logInfo("M4 ready, in run state.");
-                            }
+                            _helper.logInfo("M4 ready, in run state.");
                         }
                     }
                     break;
@@ -1476,14 +1525,25 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_SET_BINDKEY_FUNCTION:
                     _helper.logDebug("Received TYPE_RSP: CMD_SET_BINDKEY_FUNCTION");
                     break;
-                case Yuneec::CMD_EXIT_TO_AWAIT:
-                    _helper.logDebug("Received TYPE_RSP: CMD_EXIT_TO_AWAIT");
-                    break;
-                case Yuneec::CMD_ENTER_FACTORY_CAL:
-                    _helper.logDebug("Received TYPE_RSP: CMD_ENTER_FACTORY_CAL");
+                case Yuneec::CMD_ENTER_FACTORY_CAL: {
+                        //-- Response from _enterSimulation()
+                        _helper.logDebug("Received TYPE_RSP: CMD_ENTER_FACTORY_CAL");
+                        std::stringstream ss;
+                        ss << "State: " << int(_internalM4State);
+                        _helper.logDebug(ss.str());
+                        if(_internalM4State == InternalM4State::ENTER_FACTORY_CAL) {
+                            _internalM4State = InternalM4State::RUNNING_FACTORY_CAL;
+                            _timer.stop();
+                            _helper.logInfo("M4 ready, in factory calibration state.");
+                        }
+                    }
                     break;
                 case Yuneec::CMD_EXIT_FACTORY_CAL:
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_FACTORY_CAL");
+                    if(_internalM4State == InternalM4State::EXIT_FACTORY_CAL) {
+                        //-- Now we start initsequence
+                        _initSequence();
+                    }
                     break;
                 case Yuneec::CMD_GET_M4_VERSION:
                     {
@@ -1742,6 +1802,9 @@ M4Lib::_handleCommand(m4Packet& packet)
                     //-- If we were connected and just finished calibration, bind again
                     if(_vehicleConnected && old_state == M4State::FACTORY_CAL) {
                         _initAndCheckBinding();
+                    }
+                    if (old_state == M4State::NONE) {
+                        _exitToAwait();
                     }
                 }
             }

@@ -122,9 +122,6 @@ enum {
      */
         CMD_UPDATE_TX_COMPLETED = 0x9b,
 
-
-        CMD_EXIT_TO_AWAIT = 0xBD,
-
     /**
      * Received data type：bind
      * <p/>

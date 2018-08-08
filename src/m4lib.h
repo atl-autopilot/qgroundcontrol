@@ -284,6 +284,9 @@ private:
         ENTER_SIMULATION,
         EXIT_SIMULATION,
         RUNNING_SIMULATION,
+        ENTER_FACTORY_CAL,
+        EXIT_FACTORY_CAL,
+        RUNNING_FACTORY_CAL,
         RUNNING
     };
 
@@ -307,6 +310,7 @@ private:
     std::function<void(int, int, int)> _versionCallback = nullptr;
     int                     _responseTryCount;
     M4State                 _m4State;
+    M4State                 _m4IntentState;
     InternalM4State         _internalM4State;
     GetVersionState         _getVersionState {GetVersionState::NONE};
     uint8_t                 _channelNumIndex;
@@ -320,7 +324,6 @@ private:
     uint16_t                _rawChannelsCalibration[CalibrationHwIndexMax];
     bool                    _rcCalibrationComplete;
     bool                    _vehicleConnected;
-    bool                    _binding;
     bool                    _slaveMode;
     std::vector<uint16_t>   _rawChannels;
     std::vector<uint16_t>   _mixedChannels;
