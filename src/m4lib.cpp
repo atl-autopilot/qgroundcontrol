@@ -384,7 +384,7 @@ M4Lib::_tryEnterBindMode()
 {
     //-- Set M4 into bind mode
     _rxBindInfoFeedback = {};
-    //Before entering bind mode, we need to exit to await states, then enter to bind mode in _init_sequence().
+    //Before entering bind mode, we need to exit to await state, then enter to bind mode in _initSequence().
     _m4IntentState = M4State::RUN;
     _exitToAwait();
 }
@@ -478,7 +478,7 @@ M4Lib::_exitToAwait()
 {
     bool result = false;
     std::stringstream ss;
-    ss << "Exit to await states, Current State:" << m4StateStr() << "(" << int(_m4State) << ")";
+    ss << "Exit to await state, Current State:" << m4StateStr() << "(" << int(_m4State) << ")";
     _helper.logDebug(ss.str());
     switch (_m4State) {
         case M4State::BIND:
