@@ -320,8 +320,7 @@ void
 M4Lib::resetBind()
 {
     _rxBindInfoFeedback = {};
-    _exitRun();
-    _unbind();
+    _m4IntentState = M4State::NONE;
     _exitToAwait();
 }
 
@@ -329,12 +328,12 @@ void
 M4Lib::enterSlaveMode()
 {
     _slaveMode = true;
-    _m4IntentState = M4State::RUN;
 //If we disable zigbee, we don't need to do anything for entering slave mode.
 #ifndef DISABLE_ZIGBEE
     //If we would to make m4 enter simulate state to enable mixed channel,
     //we can set "_m4IntentState" to "M4State::SIM".
     //_m4IntentState = M4State::SIM;
+    _m4IntentState = M4State::RUN;
     _exitToAwait();
 #endif
 }
@@ -343,8 +342,8 @@ void
 M4Lib::exitSlaveMode()
 {
     _slaveMode = false;
-    _m4IntentState = M4State::RUN;
 #ifndef DISABLE_ZIGBEE
+    _m4IntentState = M4State::AWAIT;
     _exitToAwait();
 #endif
 }
@@ -385,7 +384,7 @@ M4Lib::_tryEnterBindMode()
     //-- Set M4 into bind mode
     _rxBindInfoFeedback = {};
     //Before entering bind mode, we need to exit to await state, then enter to bind mode in _initSequence().
-    _m4IntentState = M4State::RUN;
+    _m4IntentState = M4State::BIND;
     _exitToAwait();
 }
 
@@ -964,21 +963,10 @@ M4Lib::_initSequence()
 #endif
             _sendRecvBothCh();
         }else {
+            //-- Initialize M4 channel mapping table.
             _responseTryCount = 0;
-            //-- Check and see if we have binding info
-            if(_rxBindInfoFeedback.nodeId) {
-                std::stringstream ss;
-                ss << "Previously bound with:" << int(_rxBindInfoFeedback.nodeId) << "(" << _rxBindInfoFeedback.aNum << "Analog Channels ) (" << _rxBindInfoFeedback.swNum << "Switches )";
-                _helper.logInfo(ss.str()) ;
-                //-- Initialize M4
-                _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
-                _setChannelSetting();
-            } else {
-                //-- First run. Start binding sequence
-                _responseTryCount = 0;
-                _internalM4State = InternalM4State::ENTER_BIND;
-                _enterBind();
-            }
+            _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
+            _setChannelSetting();
             _timer.start(COMMAND_WAIT_INTERVAL);
         }
         break;
@@ -993,6 +981,20 @@ M4Lib::_initSequence()
         _responseTryCount = 0;
         _internalM4State = InternalM4State::ENTER_SIMULATION;
         _enterSimulation();
+        break;
+    case M4State::BIND:
+        _responseTryCount = 0;
+        if (_rxBindInfoFeedback.nodeId) {
+            //If we have binded zigbee device(Aircraft), send it to m4.
+            _internalM4State = InternalM4State::SEND_RX_INFO;
+            _sendRxResInfo();
+        }else {
+            //If no specific zigbee, then we will scan available zigbee.
+            _internalM4State = InternalM4State::ENTER_BIND;
+            _enterBind();
+        }
+        _m4IntentState = M4State::RUN;
+        _timer.start(COMMAND_WAIT_INTERVAL);
         break;
     default:
         break;
@@ -1011,8 +1013,8 @@ M4Lib::_stateManager()
     switch(_internalM4State) {
         case InternalM4State::EXIT_RUN:
             _helper.logInfo("STATE_EXIT_RUN Timeout");
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logWarn("Too many STATE_EXIT_RUN Timeouts. Switching to initial run.");
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::AWAIT) {
+                _helper.logWarn("Too many STATE_EXIT_RUN Timeouts or it had been AWAIT state.");
                 _initSequence();
             } else {
                 _exitRun();
@@ -1063,11 +1065,8 @@ M4Lib::_stateManager()
         case InternalM4State::UNBIND:
             _helper.logInfo("STATE_UNBIND Timeout");
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logWarn("Too many STATE_UNBIND Timeouts. Go straight to bind.");
-                _responseTryCount = 0;
-                _internalM4State = InternalM4State::BIND;
-                _bind(_rxBindInfoFeedback.nodeId);
-                _timer.start(COMMAND_WAIT_INTERVAL);
+                _helper.logWarn("Too many STATE_UNBIND Timeouts.");
+                _initSequence();
             } else {
                 _unbind();
                 _timer.start(COMMAND_WAIT_INTERVAL);
@@ -1123,8 +1122,8 @@ M4Lib::_stateManager()
             }
             break;
         case InternalM4State::ENTER_RUN:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logWarn("Too many STATE_ENTER_RUN Timeouts. Giving up...");
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::RUN) {
+                _helper.logWarn("Too many STATE_ENTER_RUN Timeouts or it had been RUN state.");
             } else {
                 _helper.logInfo("STATE_ENTER_RUN Timeout");
                 _enterRun();
@@ -1133,8 +1132,8 @@ M4Lib::_stateManager()
             }
             break;
         case InternalM4State::ENTER_SIMULATION:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logWarn("Too many STATE_ENTER_SIMULATION Timeouts. Giving up...");
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::BIND) {
+                _helper.logWarn("Too many STATE_ENTER_SIMULATION Timeouts or it had been BIND state.");
             } else {
                 _helper.logInfo("STATE_ENTER_SIMULATION Timeout");
                 _enterSimulation();
@@ -1143,8 +1142,8 @@ M4Lib::_stateManager()
             }
             break;
         case InternalM4State::EXIT_SIMULATION:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logWarn("Too many STATE_EXIT_SIMULATION Timeouts. Giving up...");
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::SIM) {
+                _helper.logWarn("Too many STATE_EXIT_SIMULATION Timeouts or it had been SIM state.");
                 _initSequence();
             } else {
                 _helper.logInfo("STATE_EXIT_SIMULATION Timeout");
@@ -1154,8 +1153,8 @@ M4Lib::_stateManager()
             }
             break;
         case InternalM4State::EXIT_FACTORY_CAL:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logWarn("Too many EXIT_FACTORY_CAL Timeouts. Giving up...");
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::FACTORY_CAL) {
+                _helper.logWarn("Too many EXIT_FACTORY_CAL Timeouts or it had been FACTORY_CAL state.");
                 _initSequence();
             } else {
                 _helper.logInfo("EXIT_FACTORY_CAL Timeout");
@@ -1409,19 +1408,19 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_UNBIND:
                     _helper.logDebug("Received TYPE_RSP: CMD_UNBIND");
                     if(_internalM4State == InternalM4State::UNBIND) {
-                        _internalM4State = InternalM4State::BIND;
-                        _bind(_rxBindInfoFeedback.nodeId);
-                        _timer.start(COMMAND_WAIT_INTERVAL);
+                        _timer.stop();
                     }
                     break;
                 case Yuneec::CMD_EXIT_BIND:
                     //-- Response from _exitBind()
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_BIND");
                     if(_internalM4State == InternalM4State::EXIT_BIND) {
-                        _responseTryCount = 0;
-                        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
-                        _setChannelSetting();
-                        _timer.start(COMMAND_WAIT_INTERVAL);
+                        if (_m4IntentState == M4State::RUN) {
+                            _internalM4State = InternalM4State::ENTER_RUN;
+                            _responseTryCount = 0;
+                            _enterRun();
+                            _timer.start(COMMAND_WAIT_INTERVAL);
+                        }
                     }
                     break;
                 case Yuneec::CMD_RECV_BOTH_CH:
@@ -1477,11 +1476,15 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                                 _responseTryCount = 0;
                                 _enterRun();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
-                            } else {
+                            }else if (_rxBindInfoFeedback.nodeId) {
+                                 _responseTryCount = 0;
+                                 _internalM4State = InternalM4State::SEND_RX_INFO;
+                                 _sendRxResInfo();
+                                 _timer.start(COMMAND_WAIT_INTERVAL);
+                            }else {
+                                _internalM4State = InternalM4State::ENTER_RUN;
                                 _responseTryCount = 0;
-                                _internalM4State = InternalM4State::SEND_RX_INFO;
-                                _sendRxResInfo();
-                                _timer.start(COMMAND_WAIT_INTERVAL);
+                                _enterRun();
                             }
                         }
                     }
@@ -1739,8 +1742,8 @@ M4Lib::_handleRxBindInfo(m4Packet& packet)
         std::stringstream ss;
         ss << "RxBindInfo:" << _getRxBindInfoFeedbackName() << _rxBindInfoFeedback.nodeId;
         _helper.logDebug(ss.str());
-        _internalM4State = InternalM4State::UNBIND;
-        _unbind();
+        _internalM4State = InternalM4State::BIND;
+        _bind(_rxBindInfoFeedback.nodeId);
         _timer.start(COMMAND_WAIT_INTERVAL);
     } else {
         _helper.logDebug("RxBindInfo discarded (out of sequence)");
@@ -1803,6 +1806,11 @@ M4Lib::_handleCommand(m4Packet& packet)
                     if(_vehicleConnected && old_state == M4State::FACTORY_CAL) {
                         _initAndCheckBinding();
                     }
+
+                    if (_m4State == M4State::AWAIT && _m4IntentState == M4State::NONE) {
+                        _unbind();
+                    }
+
                     if (old_state == M4State::NONE) {
                         _exitToAwait();
                     }
@@ -2051,7 +2059,7 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
     for(unsigned int i = 0; i < _mixedChannels.size(); i++) {
         ss << int(_mixedChannels[i]) << ", ";
     }
-    _helper.logInfo(ss.str());
+    _helper.logDebug(ss.str());
 #endif
 }
 
