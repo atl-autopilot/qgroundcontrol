@@ -993,6 +993,7 @@ M4Lib::_initSequence()
             _internalM4State = InternalM4State::ENTER_BIND;
             _enterBind();
         }
+        _m4IntentState = M4State::RUN;
         _timer.start(COMMAND_WAIT_INTERVAL);
         break;
     default:
@@ -1414,10 +1415,12 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                     //-- Response from _exitBind()
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_BIND");
                     if(_internalM4State == InternalM4State::EXIT_BIND) {
-                        _responseTryCount = 0;
-                        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
-                        _setChannelSetting();
-                        _timer.start(COMMAND_WAIT_INTERVAL);
+                        if (_m4IntentState == M4State::RUN) {
+                            _internalM4State = InternalM4State::ENTER_RUN;
+                            _responseTryCount = 0;
+                            _enterRun();
+                            _timer.start(COMMAND_WAIT_INTERVAL);
+                        }
                     }
                     break;
                 case Yuneec::CMD_RECV_BOTH_CH:
@@ -1765,7 +1768,7 @@ M4Lib::_handleChannel(m4Packet& packet)
             */
             break;
         case Yuneec::CMD_TX_CHANNEL_DATA_MIXED:
-//            _helper.logDebug("CMD_TX_CHANNEL_DATA_MIXED");
+            //_helper.logDebug("CMD_TX_CHANNEL_DATA_MIXED");
             _handleMixedChannelData(packet);
             break;
         case Yuneec::CMD_TX_CHANNEL_DATA_RAW:
@@ -1804,7 +1807,7 @@ M4Lib::_handleCommand(m4Packet& packet)
                         _initAndCheckBinding();
                     }
 
-                    if (_m4State == M4State::AWAIT) {
+                    if (_m4State == M4State::AWAIT && _m4IntentState == M4State::NONE) {
                         _unbind();
                     }
 
@@ -1991,7 +1994,7 @@ M4Lib::_handleRawChannelData(m4Packet& packet)
     if (_rawChannelsChangedCallback) {
         _rawChannelsChangedCallback();
     }
-#if 1
+#if 0
     std::stringstream ss;
     ss << "Raw channels ( " << int(analogChannelCount) << ")";
     _helper.logInfo(ss.str());
@@ -2050,7 +2053,7 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
     if(_mixedChannelsChangedCallback) {
         _mixedChannelsChangedCallback();
     }
-#if 1
+#if 0
     std::stringstream ss;
     ss << "Mixed channels (" << int(_mixedChannels.size()) << ")";
     for(unsigned int i = 0; i < _mixedChannels.size(); i++) {
