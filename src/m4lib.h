@@ -279,6 +279,8 @@ private:
         SET_CHANNEL_SETTINGS,
         MIX_CHANNEL_DELETE,
         MIX_CHANNEL_ADD,
+        RECV_BOTH_CH,
+        RECV_RAW_CH_ONLY,
         SEND_RX_INFO,
         ENTER_RUN,
         ENTER_SIMULATION,
@@ -293,6 +295,12 @@ private:
     enum class GetVersionState {
         NONE,
         GETTING_VERSION
+    };
+
+    enum class InitState{
+        NONE,
+        INPROGRESS,
+        FINISH
     };
 
     std::function<void()>   _pairCommandCallback = nullptr;
@@ -329,6 +337,7 @@ private:
     std::vector<uint16_t>   _mixedChannels;
     ControllerLocation      _controllerLocation;
     int                     _tryGetVersionCount {0};
+    InitState               _initState;
 
 #ifdef DISABLE_ZIGBEE
     bool                    _skipBind;
