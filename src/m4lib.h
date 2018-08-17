@@ -297,7 +297,7 @@ private:
         GETTING_VERSION
     };
 
-    enum class InitState{
+    enum class InitChannelMappingState{
         NONE,
         INPROGRESS,
         FINISH
@@ -337,7 +337,7 @@ private:
     std::vector<uint16_t>   _mixedChannels;
     ControllerLocation      _controllerLocation;
     int                     _tryGetVersionCount {0};
-    InitState               _initState;
+    InitChannelMappingState _initChannelState;
 
 #ifdef DISABLE_ZIGBEE
     bool                    _skipBind;

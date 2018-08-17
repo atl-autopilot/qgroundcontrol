@@ -71,7 +71,7 @@ M4Lib::M4Lib(
     , _rcCalibrationComplete(true)
     , _vehicleConnected(false)
     , _slaveMode(false)
-    , _initState(InitState::NONE)
+    , _initChannelState(InitChannelMappingState::NONE)
     #ifdef DISABLE_ZIGBEE
     , _skipBind(false)
     #endif
@@ -449,7 +449,7 @@ M4Lib::softReboot()
         _sendRxInfoEnd      = false;
         _rxchannelInfoIndex = 2;
         _channelNumIndex    = 6;
-        _initState          = InitState::NONE;
+        _initChannelState   = InitChannelMappingState::NONE;
         _helper.msleep(SEND_INTERVAL);
         init();
     }
@@ -938,11 +938,17 @@ M4Lib::_fillTableDeviceChannelNumMap(TableDeviceChannelNumInfo_t* channelNumInfo
     return res;
 }
 
+/**
+ * This function is used to initialize the M4, it must be called at AWAIT state.
+ * Actually, all configs should be set only at AWAIT state, if we want to change
+ * the config at other states, we should exit to AWAIT state, then apply the new config.
+ */
 void
 M4Lib::_initSequence()
 {
-    if (_initState == InitState::NONE) {
-        _initState = InitState::INPROGRESS;
+    //We need to config channel mapping first, and it only need to be set once.
+    if (_initChannelState == InitChannelMappingState::NONE) {
+        _initChannelState = InitChannelMappingState::INPROGRESS;
         _helper.logWarn("M4 hasn't initialized.");
         //-- Initialize M4 channel mapping table.
         _responseTryCount = 0;
@@ -950,7 +956,7 @@ M4Lib::_initSequence()
         _setChannelSetting();
         _timer.start(COMMAND_WAIT_INTERVAL);
         return;
-    }else if (_initState == InitState::INPROGRESS){
+    }else if (_initChannelState == InitChannelMappingState::INPROGRESS){
         _helper.logWarn("M4 is initialing.");
         return;
     }
@@ -1508,7 +1514,7 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                                 _timer.start(COMMAND_WAIT_INTERVAL);
                             }else {
                                 _timer.stop();
-                                _initState = InitState::FINISH;
+                                _initChannelState = InitChannelMappingState::FINISH;
                                 _initSequence();
                             }
                         }
