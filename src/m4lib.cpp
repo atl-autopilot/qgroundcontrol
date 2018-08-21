@@ -25,7 +25,7 @@ static const char* kUartName        = "/dev/ttyMFD0";
 #define COMMAND_RESPONSE_TRIES      4
 #define VERSION_WAIT_INTERVAL       250
 #define GET_VERSION_TRIES           40 // At 4 Hz that's 10 seconds.
-
+#define SCAN_INTERVAL               4000
 /*
  * Original source was ported from:
  * DroneFly/droneservice/src/main/java/com/yuneec/droneservice/parse/St16Controller.java
@@ -62,7 +62,7 @@ M4Lib::M4Lib(
     , _helper(helper)
     , _responseTryCount(0)
     , _m4State(M4State::NONE)
-    , _m4IntentState(M4State::RUN)
+    , _m4IntentState(M4State::AWAIT)
     , _internalM4State(InternalM4State::NONE)
     , _currentChannelAdd(0)
     , _rxLocalIndex(0)
@@ -963,58 +963,40 @@ M4Lib::_initSequence()
 
     switch (_m4IntentState) {
     case M4State::AWAIT:
-        _helper.logInfo("Intent to await(idle) state.");
-        if (_internalM4State == InternalM4State::SEND_RX_INFO || _internalM4State == InternalM4State::MIX_CHANNEL_ADD) {
-            _m4IntentState = M4State::RUN;
-            _internalM4State = InternalM4State::ENTER_RUN;
-            _responseTryCount = 0;
-            _enterRun();
-            _timer.start(COMMAND_WAIT_INTERVAL);
-        }
+        _helper.logDebug("Intent to await(idle) state.");
         break;
     case M4State::RUN:
-        _helper.logInfo("Intent to RUN state.");
+        _helper.logDebug("Intent to RUN state.");
         _responseTryCount = 0;
-#ifdef DISABLE_ZIGBEE
-        if(_skipBind || _slaveMode) {
-#else
-        if (_slaveMode){
-#endif
+        if (_internalM4State == InternalM4State::SEND_RX_INFO) {
+            _internalM4State = InternalM4State::ENTER_RUN;
+            _enterRun();
+        }else {
             _internalM4State = InternalM4State::RECV_BOTH_CH;
             _sendRecvBothCh();
-        }else {
-            _internalM4State = InternalM4State::RECV_RAW_CH_ONLY;
-            _sendRecvRawCh();
         }
         _timer.start(COMMAND_WAIT_INTERVAL);
         break;
     case M4State::FACTORY_CAL:
-        _helper.logInfo("Intent to FACTORY_CAL state.");
-        _responseTryCount = 0;
-        _internalM4State = InternalM4State::RECV_RAW_CH_ONLY;
-        _sendRecvRawCh();
-        _timer.start(COMMAND_WAIT_INTERVAL);
-        break;
     case M4State::SIM:
-        _helper.logInfo("Intent to SIM state.");
         _responseTryCount = 0;
         _internalM4State = InternalM4State::RECV_BOTH_CH;
         _sendRecvBothCh();
         _timer.start(COMMAND_WAIT_INTERVAL);
         break;
     case M4State::BIND:
-        _responseTryCount = 0;
+        _helper.logDebug("Intent to BIND state.");
         if (_rxBindInfoFeedback.nodeId) {
-            //If we have binded zigbee device(Aircraft), send it to m4.
-            _internalM4State = InternalM4State::SEND_RX_INFO;
-            _sendRxResInfo();
+            _m4IntentState = M4State::RUN;
+            _initSequence();
+            return;
         }else {
             //If no specific zigbee, then we will scan available zigbee.
+            _responseTryCount = 0;
             _internalM4State = InternalM4State::ENTER_BIND;
             _enterBind();
+            _timer.start(COMMAND_WAIT_INTERVAL);
         }
-        _m4IntentState = M4State::RUN;
-        _timer.start(COMMAND_WAIT_INTERVAL);
         break;
     default:
         break;
@@ -1078,7 +1060,7 @@ M4Lib::_stateManager()
             } else {
                 _startBind();
                 //-- Wait a bit longer as there may not be anyone listening
-                _timer.start(1000);
+                _timer.start(SCAN_INTERVAL);
                 _responseTryCount++;
             }
             break;
@@ -1339,6 +1321,9 @@ M4Lib::_initAndCheckBinding()
         } else {
             _helper.logInfo("In RUN mode and RC ready");
         }
+    }else {
+       _m4IntentState = M4State::RUN;
+       _exitToAwait();
     }
 #endif
 }
@@ -1427,7 +1412,7 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                         _responseTryCount = 0;
                         _internalM4State = InternalM4State::START_BIND;
                         _startBind();
-                        _timer.start(COMMAND_WAIT_INTERVAL);
+                        _timer.start(SCAN_INTERVAL);
                     }
                     break;
                 case Yuneec::CMD_UNBIND:
@@ -1444,17 +1429,16 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                     }
                     break;
                 case Yuneec::CMD_RECV_BOTH_CH:
-                case Yuneec::CMD_RECV_MIXED_CH_ONLY:
                 case Yuneec::CMD_RECV_RAW_CH_ONLY:
                     {
                         switch (_m4IntentState) {
                         case M4State::RUN:
                             _responseTryCount = 0;
-        #ifdef DISABLE_ZIGBEE
+#ifdef DISABLE_ZIGBEE
                             if(_skipBind || _slaveMode) {
-        #else
+#else
                             if (_slaveMode){
-        #endif
+#endif
                                 _internalM4State = InternalM4State::ENTER_RUN;
                                 _enterRun();
                             }else if(_rxBindInfoFeedback.nodeId) {
