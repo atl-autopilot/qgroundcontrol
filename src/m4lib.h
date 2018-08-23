@@ -47,7 +47,9 @@ public:
         FACTORY_CAL    = 7
     };
 
-    /* Structure to save binding information. */
+    /* Structure to save binding information.
+    *  The default values were dump from ST16S, except reseted panId,nodeId,txAddr.
+    */
     struct RxBindInfo {
         enum class Type {
             NUL    = -1,
@@ -57,23 +59,23 @@ public:
             RX24   = 3,
             SR19P  = 4,
         };
-        int mode = 0; // To store Type.
+        int mode = 107; // To store Type.
         int panId = 0;
         int nodeId = 0;
-        int aNum = 0;
-        int aBit = 0;
+        int aNum = 10;
+        int aBit = 12;
         int trNum = 0;
         int trBit = 0;
-        int swNum = 0;
-        int swBit = 0;
+        int swNum = 2;
+        int swBit = 2;
         int monitNum = 0;
-        int monitBit = 0;
+        int monitBit = 12;
         int extraNum = 0;
-        int extraBit = 0;
+        int extraBit = 16;
         int txAddr = 0;
-        std::vector<uint8_t> achName {};
+        std::vector<uint8_t> achName {1,2,3,4,5,6,7,8,9,10};
         std::vector<uint8_t> trName {};
-        std::vector<uint8_t> swName {};
+        std::vector<uint8_t> swName {11, 102};
         std::vector<uint8_t> monitName {};
         std::vector<uint8_t> extraName {};
     };
@@ -155,7 +157,6 @@ public:
     void setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)> callback);
     void setSettings(const RxBindInfo& rxBindInfo);
     void setVersionCallback(std::function<void(int, int, int)> callback);
-    bool getVersion();
 
     void tryRead();
 
@@ -199,7 +200,6 @@ public:
     // These need to be ifdefd, otherwise we get linking errors.
     M4Lib(
         TimerInterface& timer,
-        TimerInterface& versionTimer,
         HelperInterface& helper);
     ~M4Lib();
 
@@ -207,8 +207,6 @@ private:
     void _bytesReady(std::vector<uint8_t> data);
     void _initSequence();
     void _stateManager();
-    void _versionTimeout();
-    void _initAndCheckBinding();
 
     bool _write(std::vector<uint8_t> data, bool debug);
     void _tryEnterBindMode();
@@ -256,6 +254,7 @@ private:
     void _handlePassThroughPacket            (m4Packet& packet);
     std::string _getRxBindInfoFeedbackName   ();
     bool _tryGetVersion                      ();
+    void _resetBindedId                      ();
 
     static  int     _byteArrayToInt  (std::vector<uint8_t> data, unsigned int offset, bool isBigEndian = false);
     static  short   _byteArrayToShort(std::vector<uint8_t> data, unsigned int offset, bool isBigEndian = false);
@@ -263,12 +262,12 @@ private:
     M4SerialComm* _commPort;
 
     TimerInterface& _timer;
-    TimerInterface& _versionTimer;
     HelperInterface& _helper;
 
     enum class InternalM4State {
         NONE,
         ENTER_BIND_ERROR,
+        GET_VERSION,
         EXIT_RUN,
         ENTER_BIND,
         START_BIND,
@@ -292,17 +291,6 @@ private:
         RUNNING
     };
 
-    enum class GetVersionState {
-        NONE,
-        GETTING_VERSION
-    };
-
-    enum class InitChannelMappingState{
-        NONE,
-        INPROGRESS,
-        FINISH
-    };
-
     std::function<void()>   _pairCommandCallback = nullptr;
     std::function<void(SwitchId, SwitchState)> _switchStateChangedCallback = nullptr;
     std::function<void(ButtonId, ButtonState)> _buttonStateChangedCallback = nullptr;
@@ -320,7 +308,6 @@ private:
     M4State                 _m4State;
     M4State                 _m4IntentState;
     InternalM4State         _internalM4State;
-    GetVersionState         _getVersionState {GetVersionState::NONE};
     uint8_t                 _channelNumIndex;
     RxBindInfo              _rxBindInfoFeedback;
     int                     _currentChannelAdd;
@@ -336,8 +323,7 @@ private:
     std::vector<uint16_t>   _rawChannels;
     std::vector<uint16_t>   _mixedChannels;
     ControllerLocation      _controllerLocation;
-    int                     _tryGetVersionCount {0};
-    InitChannelMappingState _initChannelState;
+    int                     _m4Version;
 
 #ifdef DISABLE_ZIGBEE
     bool                    _skipBind;
