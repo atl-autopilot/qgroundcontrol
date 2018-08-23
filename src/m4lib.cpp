@@ -25,7 +25,7 @@ static const char* kUartName        = "/dev/ttyMFD0";
 #define COMMAND_RESPONSE_TRIES      4
 #define VERSION_WAIT_INTERVAL       250
 #define GET_VERSION_TRIES           40 // At 4 Hz that's 10 seconds.
-#define SCAN_INTERVAL               4000
+#define SCAN_INTERVAL               2500
 /*
  * Original source was ported from:
  * DroneFly/droneservice/src/main/java/com/yuneec/droneservice/parse/St16Controller.java
@@ -55,14 +55,12 @@ toHex(std::vector<uint8_t> data)
 
 M4Lib::M4Lib(
         TimerInterface& timer,
-        TimerInterface& versionTimer,
         HelperInterface& helper)
     : _timer(timer)
-    , _versionTimer(versionTimer)
     , _helper(helper)
     , _responseTryCount(0)
     , _m4State(M4State::NONE)
-    , _m4IntentState(M4State::AWAIT)
+    , _m4IntentState(M4State::RUN)
     , _internalM4State(InternalM4State::NONE)
     , _currentChannelAdd(0)
     , _rxLocalIndex(0)
@@ -71,7 +69,7 @@ M4Lib::M4Lib(
     , _rcCalibrationComplete(true)
     , _vehicleConnected(false)
     , _slaveMode(false)
-    , _initChannelState(InitChannelMappingState::NONE)
+    , _m4Version(-1)
     #ifdef DISABLE_ZIGBEE
     , _skipBind(false)
     #endif
@@ -83,7 +81,6 @@ M4Lib::M4Lib(
     _channelNumIndex    = 6;
 
     _timer.setCallback(std::bind(&M4Lib::_stateManager, this));
-    _versionTimer.setCallback(std::bind(&M4Lib::_versionTimeout, this));
     std::memset(_rawChannelsCalibration, 0, sizeof(_rawChannelsCalibration));
 
     //-- We don't use zigbee in some projects, so skip binding zigbee.
@@ -95,7 +92,6 @@ M4Lib::M4Lib(
 M4Lib::~M4Lib()
 {
     _timer.stop();
-    _versionTimer.stop();
     if(_commPort) {
         _commPort->close();
         delete _commPort;
@@ -181,6 +177,7 @@ M4Lib::init()
         _helper.logWarn("Could not start serial communication with M4");
     }
 #endif
+    _m4Version = -1;
 }
 
 void
@@ -244,24 +241,6 @@ M4Lib::setVersionCallback(std::function<void(int, int, int)> callback)
 }
 
 bool
-M4Lib::getVersion()
-{
-    if (_getVersionState == GetVersionState::GETTING_VERSION) {
-        _helper.logWarn("already trying to get version.");
-    }
-
-    if (!_versionCallback) {
-        _helper.logWarn("callback to get version not set.");
-    }
-
-    _tryGetVersionCount = 0;
-    _getVersionState = GetVersionState::GETTING_VERSION;
-    _versionTimer.start(VERSION_WAIT_INTERVAL);
-    ++_tryGetVersionCount;
-    return _tryGetVersion();
-}
-
-bool
 M4Lib::_tryGetVersion()
 {
     m4Command getVersionCmd(Yuneec::CMD_GET_M4_VERSION);
@@ -309,9 +288,20 @@ M4Lib::tryRead()
 void
 M4Lib::resetBind()
 {
-    _rxBindInfoFeedback = {};
-    _m4IntentState = M4State::AWAIT;
+    _resetBindedId();
+    if (_saveSettingsCallback) {
+        _saveSettingsCallback(_rxBindInfoFeedback);
+    }
+    _m4IntentState = M4State::SIM;
     _exitToAwait();
+}
+
+void
+M4Lib::_resetBindedId()
+{
+    _rxBindInfoFeedback.txAddr = 0;
+    _rxBindInfoFeedback.nodeId = 0;
+    _rxBindInfoFeedback.panId = 0;
 }
 
 void
@@ -322,8 +312,7 @@ M4Lib::enterSlaveMode()
 #ifndef DISABLE_ZIGBEE
     //If we would to make m4 enter simulate state to enable mixed channel,
     //we can set "_m4IntentState" to "M4State::SIM".
-    //_m4IntentState = M4State::SIM;
-    _m4IntentState = M4State::RUN;
+    _m4IntentState = M4State::SIM;
     _exitToAwait();
 #endif
 }
@@ -333,7 +322,7 @@ M4Lib::exitSlaveMode()
 {
     _slaveMode = false;
 #ifndef DISABLE_ZIGBEE
-    _m4IntentState = M4State::AWAIT;
+    _m4IntentState = M4State::RUN;
     _exitToAwait();
 #endif
 }
@@ -378,26 +367,22 @@ M4Lib::_tryEnterBindMode()
     _exitToAwait();
 }
 
-bool
-M4Lib::isVehicleReady()
-{
-    // This is a helper function to determine if we need to run isVehicleRead().
-    return (_m4State == M4State::RUN && _rcActive);
-}
-
 void
 M4Lib::checkVehicleReady()
 {
-    if(_m4State == M4State::RUN && !_rcActive) {
-        _helper.logInfo("In RUN mode but no RC yet");
-        // TODO: check this, it seems the delay is not needed.
-        //QTimer::singleShot(2000, this, &M4Lib::_initAndCheckBinding);
-        _initAndCheckBinding();
-    } else {
-        if(_m4State != M4State::RUN) {
-            //-- The M4 is not initialized
-            _helper.logInfo("M4 not yet initialized");
-            _initAndCheckBinding();
+    if (_slaveMode) {
+        if (_m4IntentState != M4State::SIM) {
+            _m4IntentState = M4State::SIM;
+            _exitToAwait();
+        }
+    }else {
+        if (_m4IntentState != M4State::RUN && _m4IntentState != M4State::BIND) {
+            enterBindMode(false);
+            return;
+        }
+
+        if (_rxBindInfoFeedback.nodeId == 0) {
+            enterBindMode(false);
         }
     }
 }
@@ -424,7 +409,7 @@ void
 M4Lib::tryStopCalibration()
 {
     if(_m4State == M4State::FACTORY_CAL) {
-        _m4IntentState = M4State::AWAIT;
+        _m4IntentState = M4State::RUN;
         _exitToAwait();
     }
 }
@@ -449,8 +434,7 @@ M4Lib::softReboot()
         _sendRxInfoEnd      = false;
         _rxchannelInfoIndex = 2;
         _channelNumIndex    = 6;
-        _initChannelState   = InitChannelMappingState::NONE;
-        _helper.msleep(SEND_INTERVAL);
+        _resetBindedId();
         init();
     }
     // We want to recheck if we are really bound, so we set RC inactive and wait to
@@ -946,21 +930,17 @@ M4Lib::_fillTableDeviceChannelNumMap(TableDeviceChannelNumInfo_t* channelNumInfo
 void
 M4Lib::_initSequence()
 {
-    //We need to config channel mapping first, and it only need to be set once.
-    if (_initChannelState == InitChannelMappingState::NONE) {
-        _initChannelState = InitChannelMappingState::INPROGRESS;
-        _helper.logWarn("M4 hasn't initialized.");
-        //-- Initialize M4 channel mapping table.
+    if (_m4Version == -1) {
         _responseTryCount = 0;
-        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
-        _setChannelSetting();
+        _internalM4State = InternalM4State::GET_VERSION;
+        _tryGetVersion();
         _timer.start(COMMAND_WAIT_INTERVAL);
         return;
-    }else if (_initChannelState == InitChannelMappingState::INPROGRESS){
-        _helper.logWarn("M4 is initialing.");
-        return;
+    }else {
+        if (_versionCallback != nullptr) {
+            _versionCallback(_m4Version >> 16, _m4Version & 0xffff, 0);
+        }
     }
-
     switch (_m4IntentState) {
     case M4State::AWAIT:
         _helper.logDebug("Intent to await(idle) state.");
@@ -972,8 +952,8 @@ M4Lib::_initSequence()
             _internalM4State = InternalM4State::ENTER_RUN;
             _enterRun();
         }else {
-            _internalM4State = InternalM4State::RECV_BOTH_CH;
-            _sendRecvBothCh();
+            _internalM4State = InternalM4State::RECV_RAW_CH_ONLY;
+            _sendRecvRawCh();
         }
         _timer.start(COMMAND_WAIT_INTERVAL);
         break;
@@ -1039,13 +1019,9 @@ M4Lib::_stateManager()
                     _internalM4State = InternalM4State::ENTER_BIND_ERROR;
                 }
             } else {
-                if(_slaveMode) {
-                    _internalM4State = InternalM4State::NONE;
-                } else {
-                    _enterBind();
-                    _timer.start(COMMAND_WAIT_INTERVAL);
-                    _responseTryCount++;
-                }
+                _enterBind();
+                _timer.start(COMMAND_WAIT_INTERVAL);
+                _responseTryCount++;
             }
             break;
         case InternalM4State::START_BIND:
@@ -1170,43 +1146,22 @@ M4Lib::_stateManager()
                 _responseTryCount++;
             }
             break;
+        case InternalM4State::GET_VERSION:
+            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
+                _helper.logWarn("Too many GET_VERSION Timeouts.");
+                _timer.stop();
+                _exitToAwait();
+            } else {
+                _helper.logInfo("GET_VERSION Timeout");
+                _tryGetVersion();
+                _timer.start(COMMAND_WAIT_INTERVAL * 4);
+                _responseTryCount++;
+            }
+            break;
         default:
             std::stringstream ss;
             ss << "Timeout:" << static_cast<int>(_internalM4State);
             _helper.logDebug(ss.str()) ;
-            break;
-    }
-}
-
-void
-M4Lib::_versionTimeout()
-{
-    switch (_getVersionState) {
-        case GetVersionState::NONE:
-            break;
-        case GetVersionState::GETTING_VERSION:
-            if (_tryGetVersionCount > GET_VERSION_TRIES) {
-                _helper.logWarn("Too many GET_VERSION tries. Giving up...");
-                _getVersionState = GetVersionState::NONE;
-                if (_versionCallback) {
-                    _versionCallback(-1, -1, -1);
-                }
-            } else if (_tryGetVersionCount == 10 ||
-                       _tryGetVersionCount == 20 ||
-                       _tryGetVersionCount == 30) {
-                // Sometimes in the beginning, we just can't get the version, unless we
-                // stop it all by doing exitRun.
-                _helper.logError("We are trying to do exitRun to get the version");
-                _versionTimer.start(COMMAND_WAIT_INTERVAL);
-                _exitRun();
-                ++_tryGetVersionCount;
-
-            } else {
-                _helper.logInfo("GET_VERSION Timeout, trying again");
-                _versionTimer.start(COMMAND_WAIT_INTERVAL);
-                ++_tryGetVersionCount;
-                _tryGetVersion();
-            }
             break;
     }
 }
@@ -1305,27 +1260,6 @@ M4Lib::_generateTableDeviceChannelInfo(TableDeviceChannelInfo_t* channelInfo)
     _helper.msleep(SEND_INTERVAL);
     _rxchannelInfoIndex++;
     return true;
-}
-
-void
-M4Lib::_initAndCheckBinding()
-{
-#if defined(__androidx86__)
-    if(!_slaveMode) {
-        //-- First boot, not bound
-        if(_m4State != M4State::RUN) {
-            enterBindMode();
-        //-- RC is bound to something. Is it bound to whoever we are connected?
-        } else if(!_rcActive) {
-            enterBindMode();
-        } else {
-            _helper.logInfo("In RUN mode and RC ready");
-        }
-    }else {
-       _m4IntentState = M4State::RUN;
-       _exitToAwait();
-    }
-#endif
 }
 
 /**
@@ -1430,41 +1364,12 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                     break;
                 case Yuneec::CMD_RECV_BOTH_CH:
                 case Yuneec::CMD_RECV_RAW_CH_ONLY:
-                    {
-                        switch (_m4IntentState) {
-                        case M4State::RUN:
-                            _responseTryCount = 0;
-#ifdef DISABLE_ZIGBEE
-                            if(_skipBind || _slaveMode) {
-#else
-                            if (_slaveMode){
-#endif
-                                _internalM4State = InternalM4State::ENTER_RUN;
-                                _enterRun();
-                            }else if(_rxBindInfoFeedback.nodeId) {
-                                _internalM4State = InternalM4State::SEND_RX_INFO;
-                                _sendRxResInfo();
-                            }else {
-                                _internalM4State = InternalM4State::ENTER_RUN;
-                                _enterRun();
-                            }
-                            _timer.start(COMMAND_WAIT_INTERVAL);
-                            break;
-                        case M4State::FACTORY_CAL:
-                            _responseTryCount = 0;
-                            _internalM4State = InternalM4State::ENTER_FACTORY_CAL;
-                            _enterFactoryCalibration();
-                            _timer.start(COMMAND_WAIT_INTERVAL);
-                            break;
-                        case M4State::SIM:
-                            _responseTryCount = 0;
-                            _internalM4State = InternalM4State::ENTER_SIMULATION;
-                            _enterSimulation();
-                            _timer.start(COMMAND_WAIT_INTERVAL);
-                            break;
-                        default:
-                            break;
-                        }
+                    if(_internalM4State == InternalM4State::RECV_BOTH_CH ||
+                       _internalM4State == InternalM4State::RECV_RAW_CH_ONLY) {
+                        _responseTryCount = 0;
+                        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
+                        _setChannelSetting();
+                        _timer.start(COMMAND_WAIT_INTERVAL);
                     }
                     break;
                 case Yuneec::CMD_SET_CHANNEL_SETTING:
@@ -1497,19 +1402,42 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                                 _syncMixingDataAdd();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
                             }else {
-                                _timer.stop();
-                                _initChannelState = InitChannelMappingState::FINISH;
-                                _initSequence();
+                                _responseTryCount = 0;
+                                _internalM4State = InternalM4State::SEND_RX_INFO;
+                                _sendRxResInfo();
+                                _timer.start(COMMAND_WAIT_INTERVAL);
                             }
                         }
                     }
                     break;
                 case Yuneec::CMD_SEND_RX_RESINFO:
-                    //-- Response from _sendRxResInfo()
-                    if(_internalM4State == InternalM4State::SEND_RX_INFO && _sendRxInfoEnd) {
-                        _helper.logDebug("Received TYPE_RSP: CMD_SEND_RX_RESINFO");
-                        _initSequence();
+                //-- Response from _sendRxResInfo()
+                if(_internalM4State == InternalM4State::SEND_RX_INFO && _sendRxInfoEnd) {
+                    _helper.logDebug("Received TYPE_RSP: CMD_SEND_RX_RESINFO");
+                    _timer.stop();
+                    switch (_m4IntentState) {
+                        case M4State::RUN:
+                            _responseTryCount = 0;
+                            _internalM4State = InternalM4State::ENTER_RUN;
+                            _enterRun();
+                            _timer.start(COMMAND_WAIT_INTERVAL);
+                            break;
+                        case M4State::FACTORY_CAL:
+                            _responseTryCount = 0;
+                            _internalM4State = InternalM4State::ENTER_FACTORY_CAL;
+                            _enterFactoryCalibration();
+                            _timer.start(COMMAND_WAIT_INTERVAL);
+                            break;
+                        case M4State::SIM:
+                            _responseTryCount = 0;
+                            _internalM4State = InternalM4State::ENTER_SIMULATION;
+                            _enterSimulation();
+                            _timer.start(COMMAND_WAIT_INTERVAL);
+                            break;
+                        default:
+                            break;
                     }
+                }
                     break;
                 case Yuneec::CMD_ENTER_RUN: {
                         //-- Response from _enterRun()
@@ -1592,9 +1520,11 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                             ss.clear();
                             ss << "Received M4 Version: " << major << "." << minor;
                             _helper.logInfo(ss.str());
-                            _versionTimer.stop();
-                            if (_getVersionState == GetVersionState::GETTING_VERSION) {
-                                _getVersionState = GetVersionState::NONE;
+                            _m4Version = ((major << 16) | (minor & 0xffff));
+                            if (_internalM4State == InternalM4State::GET_VERSION) {
+                                _timer.stop();
+                                _internalM4State = InternalM4State::NONE;
+                                _exitToAwait();
                             }
                             if (_versionCallback != nullptr) {
                                 _versionCallback(major, minor, 0);
@@ -1815,10 +1745,6 @@ M4Lib::_handleCommand(m4Packet& packet)
                     std::stringstream ss;
                     ss << "New State:" << m4StateStr() << "(" << int(_m4State) << ")";
                     _helper.logDebug(ss.str());
-                    //-- If we were connected and just finished calibration, bind again
-                    if(_vehicleConnected && old_state == M4State::FACTORY_CAL) {
-                        _initAndCheckBinding();
-                    }
 
                     if (_m4State == M4State::AWAIT && _m4IntentState == M4State::AWAIT) {
                         _unbind();
@@ -1995,6 +1921,9 @@ M4Lib::_handleRawChannelData(m4Packet& packet)
     for(int i = 0; i < analogChannelCount; i++) {
         uint16_t value = 0;
         unsigned int index = static_cast<unsigned int>(std::floor(i * 1.5));
+        if ((index + 1) >= values.size()) {
+            break;
+        }
         val1 = values[index] & 0xff;
         val2 = values[index + 1] & 0xff;
         if(i % 2 == 0) {
@@ -2004,7 +1933,8 @@ M4Lib::_handleRawChannelData(m4Packet& packet)
         }
         _rawChannels.push_back(value);
     }
-    if (_rawChannelsChangedCallback) {
+    if (_rawChannelsChangedCallback
+            && (_rawChannels.size() == static_cast<unsigned int>(analogChannelCount))) {
         _rawChannelsChangedCallback();
     }
 #if 0
@@ -2030,9 +1960,12 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
     int analogChannelCount = 10;
     int switchChannelCount = 2;
     unsigned int value, val1, val2;
-    for(int i = 0; i < analogChannelCount + switchChannelCount; i++) {
+    for(int i = 0; (i < analogChannelCount + switchChannelCount); i++) {
         if(i < analogChannelCount) {
             unsigned int index = static_cast<unsigned int>(floor(i * 1.5));
+            if ((index + 1) >= values.size()) {
+                break;
+            }
             val1 = values[index] & 0xff;
             val2 = values[index + 1] & 0xff;
             if(i % 2 == 0) {
@@ -2042,6 +1975,9 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
             }
         } else {
             unsigned int index = static_cast<unsigned int>(ceil((analogChannelCount - 1) * 1.5) + ceil((i - analogChannelCount + 1) * 0.25));
+            if ((index) >= values.size()) {
+                break;
+            }
             val1 = values[index] & 0xff;
             switch((i - analogChannelCount + 1) % 4) {
                 case 1:
@@ -2063,7 +1999,8 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
         }
         _mixedChannels.push_back(static_cast<uint16_t>(value));
     }
-    if(_mixedChannelsChangedCallback) {
+    if(_mixedChannelsChangedCallback
+            && (_mixedChannels.size() == static_cast<unsigned int>(analogChannelCount + switchChannelCount))) {
         _mixedChannelsChangedCallback();
     }
 #if 0
@@ -2080,6 +2017,9 @@ void
 M4Lib::_handleControllerFeedback(m4Packet& packet)
 {
     std::vector<uint8_t> commandValues = packet.commandValues();
+    if (commandValues.size() < 19) {
+        return;
+    }
     int ilat = _byteArrayToInt(commandValues, 0);
     int ilon = _byteArrayToInt(commandValues, 4);
     int ialt = _byteArrayToInt(commandValues, 8);
