@@ -137,6 +137,12 @@ public:
         PRESSED
     };
 
+    enum class InitChannelState {
+        NONE,
+        INPROGRESS,
+        FINISH
+    };
+
     void init();
     void deinit();
 
@@ -324,6 +330,7 @@ private:
     std::vector<uint16_t>   _mixedChannels;
     ControllerLocation      _controllerLocation;
     int                     _m4Version;
+    InitChannelState        _initChannelMappingState;
 
 #ifdef DISABLE_ZIGBEE
     bool                    _skipBind;
