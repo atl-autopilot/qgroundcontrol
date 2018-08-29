@@ -23,9 +23,8 @@ static const char* kUartName        = "/dev/ttyMFD0";
 #define COMMAND_WAIT_INTERVAL       250
 #define SEND_INTERVAL               60
 #define COMMAND_RESPONSE_TRIES      4
-#define VERSION_WAIT_INTERVAL       250
 #define GET_VERSION_TRIES           40 // At 4 Hz that's 10 seconds.
-#define SCAN_INTERVAL               2500
+#define SCAN_INTERVAL               2000
 /*
  * Original source was ported from:
  * DroneFly/droneservice/src/main/java/com/yuneec/droneservice/parse/St16Controller.java
@@ -70,6 +69,7 @@ M4Lib::M4Lib(
     , _vehicleConnected(false)
     , _slaveMode(false)
     , _m4Version(-1)
+    , _initChannelMappingState(InitChannelState::NONE)
     #ifdef DISABLE_ZIGBEE
     , _skipBind(false)
     #endif
@@ -930,6 +930,17 @@ M4Lib::_fillTableDeviceChannelNumMap(TableDeviceChannelNumInfo_t* channelNumInfo
 void
 M4Lib::_initSequence()
 {
+    if (_initChannelMappingState == InitChannelState::NONE) {
+        _initChannelMappingState = InitChannelState::INPROGRESS;
+        _responseTryCount = 0;
+        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
+        _setChannelSetting();
+        _timer.start(COMMAND_WAIT_INTERVAL);
+        return;
+    }else if (_initChannelMappingState == InitChannelState::INPROGRESS){
+        return;
+    }
+
     if (_m4Version == -1) {
         _responseTryCount = 0;
         _internalM4State = InternalM4State::GET_VERSION;
@@ -1064,9 +1075,17 @@ M4Lib::_stateManager()
             //-- TODO: This can't wait for ever...
             break;
         case InternalM4State::EXIT_BIND:
-            _helper.logInfo("STATE_EXIT_BIND Timeout");
-            _exitBind();
-            _timer.start(COMMAND_WAIT_INTERVAL);
+            if(_m4State == M4State::AWAIT) {
+                _timer.stop();
+                _initSequence();
+            } else if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
+                _helper.logInfo("STATE_EXIT_BIND Timeout");
+                _responseTryCount = 0;
+                _exitBind();
+                _timer.start(COMMAND_WAIT_INTERVAL);
+            }else {
+                _timer.start(COMMAND_WAIT_INTERVAL);
+            }
             //-- TODO: This can't wait for ever...
             break;
         case InternalM4State::SET_CHANNEL_SETTINGS:
@@ -1358,17 +1377,16 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                 case Yuneec::CMD_EXIT_BIND:
                     //-- Response from _exitBind()
                     _helper.logDebug("Received TYPE_RSP: CMD_EXIT_BIND");
-                    if(_internalM4State == InternalM4State::EXIT_BIND) {
-                        _initSequence();
-                    }
                     break;
                 case Yuneec::CMD_RECV_BOTH_CH:
                 case Yuneec::CMD_RECV_RAW_CH_ONLY:
+                    _helper.logDebug("Received TYPE_RSP: CMD_RECV_BOTH_CH or CMD_RECV_RAW_CH_ONLY");
                     if(_internalM4State == InternalM4State::RECV_BOTH_CH ||
                        _internalM4State == InternalM4State::RECV_RAW_CH_ONLY) {
+                        _timer.stop();
                         _responseTryCount = 0;
-                        _internalM4State = InternalM4State::SET_CHANNEL_SETTINGS;
-                        _setChannelSetting();
+                        _internalM4State = InternalM4State::SEND_RX_INFO;
+                        _sendRxResInfo();
                         _timer.start(COMMAND_WAIT_INTERVAL);
                     }
                     break;
@@ -1402,10 +1420,8 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                                 _syncMixingDataAdd();
                                 _timer.start(COMMAND_WAIT_INTERVAL);
                             }else {
-                                _responseTryCount = 0;
-                                _internalM4State = InternalM4State::SEND_RX_INFO;
-                                _sendRxResInfo();
-                                _timer.start(COMMAND_WAIT_INTERVAL);
+                                _initChannelMappingState = InitChannelState::FINISH;
+                                _initSequence();
                             }
                         }
                     }
@@ -1574,6 +1590,7 @@ M4Lib::_handleQueryBindResponse(std::vector<uint8_t> data)
             std::stringstream ss;
             ss << "Switched to BOUND state with:" << _getRxBindInfoFeedbackName();
             _helper.logDebug(ss.str());
+            _responseTryCount = 0;
             _internalM4State = InternalM4State::EXIT_BIND;
             _exitBind();
             if (_saveSettingsCallback) {
@@ -1682,6 +1699,9 @@ M4Lib::_handleRxBindInfo(m4Packet& packet)
         }
         unsigned int p = packet.data.size() - 2;
         _rxBindInfoFeedback.txAddr = (uint8_t(packet.data[p]) & 0xff) | (uint8_t(packet.data[p + 1]) << 8 & 0xff00);
+        _rxchannelInfoIndex = 2;
+        _channelNumIndex    = 6;
+        _rxLocalIndex       = 0;
         std::stringstream ss;
         ss << "RxBindInfo:" << _getRxBindInfoFeedbackName() << _rxBindInfoFeedback.nodeId;
         _helper.logDebug(ss.str());
