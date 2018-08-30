@@ -183,7 +183,8 @@ M4Lib::init()
 void
 M4Lib::deinit()
 {
-    //Nothing need to do.
+    _m4IntentState = M4State::AWAIT;
+    _exitToAwait();
 }
 
 void
@@ -1003,32 +1004,57 @@ M4Lib::_initSequence()
 void
 M4Lib::_stateManager()
 {
+    _timer.stop();
     switch(_internalM4State) {
         case InternalM4State::EXIT_RUN:
-            _helper.logInfo("STATE_EXIT_RUN Timeout");
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::AWAIT) {
-                _helper.logWarn("Too many STATE_EXIT_RUN Timeouts or it had been AWAIT state.");
+        case InternalM4State::EXIT_SIMULATION:
+        case InternalM4State::EXIT_FACTORY_CAL:
+        case InternalM4State::EXIT_BIND:
+            if(_m4State == M4State::AWAIT) {
+                _helper.logDebug("m4 has been AWAIT state.");
                 _initSequence();
             } else {
-                _exitRun();
+                _exitToAwait();
                 _timer.start(COMMAND_WAIT_INTERVAL);
-                _responseTryCount++;
+            }
+            break;
+        case InternalM4State::ENTER_RUN:
+            if(_m4State == M4State::RUN) {
+                _helper.logDebug("m4 had been RUN state.");
+            } else {
+                _helper.logInfo("STATE_ENTER_RUN Timeout");
+                _enterRun();
+                _timer.start(COMMAND_WAIT_INTERVAL);
+            }
+            break;
+        case InternalM4State::ENTER_SIMULATION:
+            if(_m4State == M4State::SIM) {
+                _helper.logDebug("m4 had been SIM state.");
+            } else {
+                _helper.logInfo("STATE_ENTER_SIMULATION Timeout");
+                _enterSimulation();
+                _timer.start(COMMAND_WAIT_INTERVAL);
+            }
+            break;
+        case InternalM4State::ENTER_FACTORY_CAL:
+            if(_m4State == M4State::FACTORY_CAL) {
+                _helper.logDebug("m4 had been FACTORY_CAL state.");
+            } else {
+                _helper.logInfo("STATE_FACTORY_CAL Timeout");
+                _enterFactoryCalibration();
+                _timer.start(COMMAND_WAIT_INTERVAL);
             }
             break;
         case InternalM4State::ENTER_BIND:
-            _helper.logInfo("STATE_ENTER_BIND Timeout");
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logWarn("Too many STATE_ENTER_BIND Timeouts.");
-                if(_rxBindInfoFeedback.nodeId) {
-                    _responseTryCount = 0;
-                    _internalM4State = InternalM4State::SEND_RX_INFO;
-                    _sendRxResInfo();
-                    _timer.start(COMMAND_WAIT_INTERVAL);
-                } else {
-                    //-- We're stuck. Wen can't enter bind and we have no binding info.
-                    _helper.logError("Cannot enter binding mode");
-                    _internalM4State = InternalM4State::ENTER_BIND_ERROR;
-                }
+            if(_m4State == M4State::BIND) {
+                //-- Now we start scanning
+                _responseTryCount = 0;
+                _internalM4State = InternalM4State::START_BIND;
+                _startBind();
+                _timer.start(SCAN_INTERVAL);
+            } else if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
+                _helper.logDebug("Too many ENTER_BIND failed, exit to AWAIT state to retry.");
+                _exitToAwait();
             } else {
                 _enterBind();
                 _timer.start(COMMAND_WAIT_INTERVAL);
@@ -1039,7 +1065,10 @@ M4Lib::_stateManager()
             _helper.logInfo("STATE_START_BIND Timeout");
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logError("Too many STATE_START_BIND Timeouts. Giving up...");
-
+                //If we haven't scan any available zigbee, try to fire pairing
+                if (_pairCommandCallback) {
+                    _pairCommandCallback();
+                }
                 _internalM4State = InternalM4State::EXIT_BIND;
                 _exitBind();
                 _timer.start(COMMAND_WAIT_INTERVAL);
@@ -1072,20 +1101,6 @@ M4Lib::_stateManager()
             _helper.logInfo("STATE_QUERY_BIND Timeout");
             _queryBindState();
             _timer.start(COMMAND_WAIT_INTERVAL);
-            //-- TODO: This can't wait for ever...
-            break;
-        case InternalM4State::EXIT_BIND:
-            if(_m4State == M4State::AWAIT) {
-                _timer.stop();
-                _initSequence();
-            } else if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
-                _helper.logInfo("STATE_EXIT_BIND Timeout");
-                _responseTryCount = 0;
-                _exitBind();
-                _timer.start(COMMAND_WAIT_INTERVAL);
-            }else {
-                _timer.start(COMMAND_WAIT_INTERVAL);
-            }
             //-- TODO: This can't wait for ever...
             break;
         case InternalM4State::SET_CHANNEL_SETTINGS:
@@ -1123,52 +1138,9 @@ M4Lib::_stateManager()
             _sendRxResInfo();
             _timer.start(COMMAND_WAIT_INTERVAL);
             break;
-        case InternalM4State::ENTER_RUN:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::RUN) {
-                _helper.logWarn("Too many STATE_ENTER_RUN Timeouts or it had been RUN state.");
-            } else {
-                _helper.logInfo("STATE_ENTER_RUN Timeout");
-                _enterRun();
-                _timer.start(COMMAND_WAIT_INTERVAL);
-                _responseTryCount++;
-            }
-            break;
-        case InternalM4State::ENTER_SIMULATION:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::BIND) {
-                _helper.logWarn("Too many STATE_ENTER_SIMULATION Timeouts or it had been BIND state.");
-            } else {
-                _helper.logInfo("STATE_ENTER_SIMULATION Timeout");
-                _enterSimulation();
-                _timer.start(COMMAND_WAIT_INTERVAL);
-                _responseTryCount++;
-            }
-            break;
-        case InternalM4State::EXIT_SIMULATION:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::SIM) {
-                _helper.logWarn("Too many STATE_EXIT_SIMULATION Timeouts or it had been SIM state.");
-                _initSequence();
-            } else {
-                _helper.logInfo("STATE_EXIT_SIMULATION Timeout");
-                _exitSimulation();
-                _timer.start(COMMAND_WAIT_INTERVAL);
-                _responseTryCount++;
-            }
-            break;
-        case InternalM4State::EXIT_FACTORY_CAL:
-            if(_responseTryCount > COMMAND_RESPONSE_TRIES || _m4State == M4State::FACTORY_CAL) {
-                _helper.logWarn("Too many EXIT_FACTORY_CAL Timeouts or it had been FACTORY_CAL state.");
-                _initSequence();
-            } else {
-                _helper.logInfo("EXIT_FACTORY_CAL Timeout");
-                _exitFactoryCalibration();
-                _timer.start(COMMAND_WAIT_INTERVAL);
-                _responseTryCount++;
-            }
-            break;
         case InternalM4State::GET_VERSION:
             if(_responseTryCount > COMMAND_RESPONSE_TRIES) {
                 _helper.logWarn("Too many GET_VERSION Timeouts.");
-                _timer.stop();
                 _exitToAwait();
             } else {
                 _helper.logInfo("GET_VERSION Timeout");
@@ -1342,41 +1314,21 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                     _handleQueryBindResponse(data);
                     break;
                 case Yuneec::CMD_EXIT_RUN:
-                    //-- Response from _exitRun()
-                    _helper.logDebug("Received TYPE_RSP: CMD_EXIT_RUN");
-                    if(_internalM4State == InternalM4State::EXIT_RUN) {
-                        //-- Now we start initsequence
-                        _initSequence();
-                    }
-                    break;
                 case Yuneec::CMD_EXIT_SIMULATOR:
-                    //-- Response from _exitSimulation()
-                    _helper.logDebug("Received TYPE_RSP: CMD_EXIT_SIMULATOR");
-                    if(_internalM4State == InternalM4State::EXIT_SIMULATION) {
-                        //-- Now we start initsequence
-                        _initSequence();
-                    }
-                    break;
+                case Yuneec::CMD_EXIT_FACTORY_CAL:
+                case Yuneec::CMD_EXIT_BIND:
+                case Yuneec::CMD_ENTER_RUN:
+                case Yuneec::CMD_ENTER_SIMULATOR:
+                case Yuneec::CMD_ENTER_FACTORY_CAL:
                 case Yuneec::CMD_ENTER_BIND:
-                    //-- Response from _enterBind()
-                    _helper.logDebug("Received TYPE_RSP: CMD_ENTER_BIND");
-                    if(_internalM4State == InternalM4State::ENTER_BIND) {
-                        //-- Now we start scanning
-                        _responseTryCount = 0;
-                        _internalM4State = InternalM4State::START_BIND;
-                        _startBind();
-                        _timer.start(SCAN_INTERVAL);
+                    {
+                        std::stringstream ss;
+                        ss << "Received change states response, TYPE_RSP: " << packet.commandID();
+                        _helper.logDebug(ss.str());
                     }
                     break;
                 case Yuneec::CMD_UNBIND:
                     _helper.logDebug("Received TYPE_RSP: CMD_UNBIND");
-                    if(_internalM4State == InternalM4State::UNBIND) {
-                        _timer.stop();
-                    }
-                    break;
-                case Yuneec::CMD_EXIT_BIND:
-                    //-- Response from _exitBind()
-                    _helper.logDebug("Received TYPE_RSP: CMD_EXIT_BIND");
                     break;
                 case Yuneec::CMD_RECV_BOTH_CH:
                 case Yuneec::CMD_RECV_RAW_CH_ONLY:
@@ -1427,83 +1379,37 @@ M4Lib::_bytesReady(std::vector<uint8_t> data)
                     }
                     break;
                 case Yuneec::CMD_SEND_RX_RESINFO:
-                //-- Response from _sendRxResInfo()
-                if(_internalM4State == InternalM4State::SEND_RX_INFO && _sendRxInfoEnd) {
-                    _helper.logDebug("Received TYPE_RSP: CMD_SEND_RX_RESINFO");
-                    _timer.stop();
-                    switch (_m4IntentState) {
-                        case M4State::RUN:
-                            _responseTryCount = 0;
-                            _internalM4State = InternalM4State::ENTER_RUN;
-                            _enterRun();
-                            _timer.start(COMMAND_WAIT_INTERVAL);
-                            break;
-                        case M4State::FACTORY_CAL:
-                            _responseTryCount = 0;
-                            _internalM4State = InternalM4State::ENTER_FACTORY_CAL;
-                            _enterFactoryCalibration();
-                            _timer.start(COMMAND_WAIT_INTERVAL);
-                            break;
-                        case M4State::SIM:
-                            _responseTryCount = 0;
-                            _internalM4State = InternalM4State::ENTER_SIMULATION;
-                            _enterSimulation();
-                            _timer.start(COMMAND_WAIT_INTERVAL);
-                            break;
-                        default:
-                            break;
-                    }
-                }
-                    break;
-                case Yuneec::CMD_ENTER_RUN: {
-                        //-- Response from _enterRun()
-                        _helper.logDebug("Received TYPE_RSP: CMD_ENTER_RUN");
-                        std::stringstream ss;
-                        ss << "State: " << int(_internalM4State);
-                        _helper.logDebug(ss.str());
-                        if(_internalM4State == InternalM4State::ENTER_RUN) {
-                            _internalM4State = InternalM4State::RUNNING;
-                            _timer.stop();
-                            _helper.logInfo("M4 ready, in run state.");
+                    //-- Response from _sendRxResInfo()
+                    if(_internalM4State == InternalM4State::SEND_RX_INFO && _sendRxInfoEnd) {
+                        _helper.logDebug("Received TYPE_RSP: CMD_SEND_RX_RESINFO");
+                        _timer.stop();
+                        switch (_m4IntentState) {
+                            case M4State::RUN:
+                                _responseTryCount = 0;
+                                _internalM4State = InternalM4State::ENTER_RUN;
+                                _enterRun();
+                                _timer.start(COMMAND_WAIT_INTERVAL);
+                                break;
+                            case M4State::FACTORY_CAL:
+                                _responseTryCount = 0;
+                                _internalM4State = InternalM4State::ENTER_FACTORY_CAL;
+                                _enterFactoryCalibration();
+                                _timer.start(COMMAND_WAIT_INTERVAL);
+                                break;
+                            case M4State::SIM:
+                                _responseTryCount = 0;
+                                _internalM4State = InternalM4State::ENTER_SIMULATION;
+                                _enterSimulation();
+                                _timer.start(COMMAND_WAIT_INTERVAL);
+                                break;
+                            default:
+                                break;
                         }
                     }
                     break;
-                case Yuneec::CMD_ENTER_SIMULATOR: {
-                        //-- Response from _enterSimulation()
-                        _helper.logDebug("Received TYPE_RSP: CMD_ENTER_SIMULATOR");
-                        std::stringstream ss;
-                        ss << "State: " << int(_internalM4State);
-                        _helper.logDebug(ss.str());
-                        if(_internalM4State == InternalM4State::ENTER_SIMULATION) {
-                            _internalM4State = InternalM4State::RUNNING_SIMULATION;
-                            _timer.stop();
-                            _helper.logInfo("M4 ready, in simulation state.");
-                        }
-                    }
-                    break;
+
                 case Yuneec::CMD_SET_BINDKEY_FUNCTION:
                     _helper.logDebug("Received TYPE_RSP: CMD_SET_BINDKEY_FUNCTION");
-                    break;
-                case Yuneec::CMD_ENTER_FACTORY_CAL: {
-                        //-- Response from _enterSimulation()
-                        _helper.logDebug("Received TYPE_RSP: CMD_ENTER_FACTORY_CAL");
-                        std::stringstream ss;
-                        ss << "State: " << int(_internalM4State);
-                        _helper.logDebug(ss.str());
-                        if(_internalM4State == InternalM4State::ENTER_FACTORY_CAL) {
-                            _internalM4State = InternalM4State::RUNNING_FACTORY_CAL;
-                            _timer.stop();
-                            _helper.logInfo("M4 ready, in factory calibration state.");
-                        }
-                    }
-                    break;
-                case Yuneec::CMD_EXIT_FACTORY_CAL:
-                    _helper.logDebug("Received TYPE_RSP: CMD_EXIT_FACTORY_CAL");
-                    if(_internalM4State == InternalM4State::EXIT_FACTORY_CAL) {
-                        //-- Now we start initsequence
-                        _timer.stop();
-                        _initSequence();
-                    }
                     break;
                 case Yuneec::CMD_GET_M4_VERSION:
                     {
