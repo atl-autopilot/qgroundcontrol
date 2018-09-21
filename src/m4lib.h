@@ -160,8 +160,8 @@ public:
     void setMixedChannelsChangedCallback(std::function<void()> callback);
     void setControllerLocationChangedCallback(std::function<void()> callback);
     void setM4StateChangedCallback(std::function<void()> callback);
-    void setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)> callback);
-    void setSettings(const RxBindInfo& rxBindInfo);
+    void setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo, int rxBindInfoCrc)> callback);
+    void setSettings(const RxBindInfo& rxBindInfo, int storageCrc);
     void setVersionCallback(std::function<void(int, int, int)> callback);
 
     void tryRead();
@@ -261,6 +261,7 @@ private:
     std::string _getRxBindInfoFeedbackName   ();
     bool _tryGetVersion                      ();
     void _resetBindedId                      ();
+    uint8_t _calculateBindInfoCrc            (const RxBindInfo& rxBindInfo);
 
     static  int     _byteArrayToInt  (std::vector<uint8_t> data, unsigned int offset, bool isBigEndian = false);
     static  short   _byteArrayToShort(std::vector<uint8_t> data, unsigned int offset, bool isBigEndian = false);
@@ -307,7 +308,7 @@ private:
     std::function<void()> _mixedChannelsChangedCallback = nullptr;
     std::function<void()> _controllerLocationChangedCallback = nullptr;
     std::function<void()> _m4StateChangedCallback = nullptr;
-    std::function<void(const RxBindInfo&)> _saveSettingsCallback = nullptr;
+    std::function<void(const RxBindInfo&, int rxBindInfoCrc)> _saveSettingsCallback = nullptr;
     // A version of -1.-1.-1 means the request timed out.
     std::function<void(int, int, int)> _versionCallback = nullptr;
     int                     _responseTryCount;

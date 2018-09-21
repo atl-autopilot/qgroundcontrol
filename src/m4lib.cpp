@@ -262,16 +262,24 @@ M4Lib::setM4StateChangedCallback(std::function<void()> callback)
 }
 
 void
-M4Lib::setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo)> callback)
+M4Lib::setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo, int rxBindInfoCrc)> callback)
 {
     _saveSettingsCallback = callback;
 }
 
 void
-M4Lib::setSettings(const RxBindInfo& rxBindInfo)
+M4Lib::setSettings(const RxBindInfo& rxBindInfo, int storageCrc)
 {
-    _rxBindInfoFeedback = rxBindInfo;
-    _sendRxInfoEnd = false;
+    uint8_t rxBindInfoCrc = _calculateBindInfoCrc(rxBindInfo);
+    if (storageCrc == (rxBindInfoCrc & 0xff)) {
+        _rxBindInfoFeedback = rxBindInfo;
+        _sendRxInfoEnd = false;
+    }else {
+        _resetBindedId();
+        std::stringstream ss;
+        ss << "CRC check fail. storage crc: " << storageCrc << ", calculate RxBindInfo crc: " << (rxBindInfoCrc & 0xff);
+        _helper.logError(ss.str());
+    }
 }
 
 bool
@@ -291,7 +299,8 @@ M4Lib::resetBind()
 {
     _resetBindedId();
     if (_saveSettingsCallback) {
-        _saveSettingsCallback(_rxBindInfoFeedback);
+         uint8_t rxBindInfoCrc = _calculateBindInfoCrc(_rxBindInfoFeedback);
+        _saveSettingsCallback(_rxBindInfoFeedback, rxBindInfoCrc & 0xff);
     }
     _m4IntentState = M4State::SIM;
     _exitToAwait();
@@ -1500,7 +1509,11 @@ M4Lib::_handleQueryBindResponse(std::vector<uint8_t> data)
             _internalM4State = InternalM4State::EXIT_BIND;
             _exitBind();
             if (_saveSettingsCallback) {
-                _saveSettingsCallback(_rxBindInfoFeedback);
+                uint8_t rxBindInfoCrc = _calculateBindInfoCrc(_rxBindInfoFeedback);
+                std::stringstream ss;
+                ss << "Found new zigbee, the crc of rxBindInfo: " << (rxBindInfoCrc & 0xff);
+                _helper.logDebug(ss.str());
+                _saveSettingsCallback(_rxBindInfoFeedback, rxBindInfoCrc & 0xff);
             }
             _timer.start(COMMAND_WAIT_INTERVAL);
         } else {
@@ -2078,6 +2091,51 @@ std::string M4Lib::_getRxBindInfoFeedbackName()
                 return nodeSs.str();
             }
     }
+}
+
+uint8_t M4Lib::_calculateBindInfoCrc(const RxBindInfo& rxBindInfo)
+{
+    int headerSize = sizeof(rxBindInfo) - (sizeof(std::vector<uint8_t>) * 5);
+    uint8_t calcBuffer[headerSize +
+                       rxBindInfo.achName.size() +
+                       rxBindInfo.trName.size() +
+                       rxBindInfo.swName.size() +
+                       rxBindInfo.monitName.size() +
+                       rxBindInfo.extraName.size()];
+    int offset = 0;
+    int copySize = headerSize;
+    memcpy(calcBuffer + offset, (uint8_t *)&rxBindInfo, copySize);
+    offset += copySize;
+
+    copySize = rxBindInfo.achName.size();
+    if (copySize > 0) {
+        memcpy(calcBuffer + offset, rxBindInfo.achName.data(), copySize);
+        offset += copySize;
+    }
+
+    copySize = rxBindInfo.trName.size();
+    if (copySize > 0) {
+        memcpy(calcBuffer + offset, rxBindInfo.trName.data(), copySize);
+        offset += copySize;
+    }
+    copySize = rxBindInfo.swName.size();
+    if (copySize > 0) {
+        memcpy(calcBuffer + offset, rxBindInfo.swName.data(), copySize);
+        offset += copySize;
+    }
+
+    copySize = rxBindInfo.monitName.size();
+    if (copySize > 0) {
+        memcpy(calcBuffer + offset, rxBindInfo.monitName.data(), copySize);
+        offset += copySize;
+    }
+
+    copySize = rxBindInfo.extraName.size();
+    if (copySize > 0) {
+        memcpy(calcBuffer + offset, rxBindInfo.extraName.data(), copySize);
+        offset += copySize;
+    }
+    return crc8(calcBuffer, offset);
 }
 
 #endif // defined(__androidx86__)
