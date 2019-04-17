@@ -974,7 +974,11 @@ M4Lib::_initSequence()
             _enterRun();
         }else {
             _internalM4State = InternalM4State::RECV_RAW_CH_ONLY;
+#ifdef DISABLE_ZIGBEE
+            _sendRecvBothCh();
+#else
             _sendRecvRawCh();
+#endif
         }
         _timer.start(COMMAND_WAIT_INTERVAL);
         break;
@@ -1139,7 +1143,11 @@ M4Lib::_stateManager()
             break;
         case InternalM4State::RECV_RAW_CH_ONLY:
             _helper.logInfo("CMD_RECV_RAW_CH_ONLY Timeout");
+#ifdef DISABLE_ZIGBEE
+            _sendRecvBothCh();
+#else
             _sendRecvRawCh();
+#endif
             _timer.start(COMMAND_WAIT_INTERVAL);
             break;
         case InternalM4State::SEND_RX_INFO:
