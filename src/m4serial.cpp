@@ -192,7 +192,7 @@ M4SerialComm::_readPacket(uint8_t length)
 int
 M4SerialComm::_openPort(const char* port)
 {
-    int fd = ::open(port, O_RDWR | O_NOCTTY | O_NDELAY);
+    int fd = ::open(port, O_RDWR | O_NOCTTY | O_NDELAY | O_NONBLOCK);
     if(fd >= 0) {
         fcntl(fd, F_SETFL, 0);
     }

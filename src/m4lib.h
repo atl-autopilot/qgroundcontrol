@@ -131,10 +131,16 @@ public:
         CAMERA_SHUTTER,
         VIDEO_SHUTTER,
     };
-
     enum class ButtonState {
         NORMAL,
         PRESSED
+    };
+
+    enum class TrimState
+    {
+        INCREASE_PRESSED,
+        DECREASE_PRESSED,
+        RELEASED
     };
 
     enum class InitChannelState {
@@ -153,6 +159,7 @@ public:
     void setPairCommandCallback(std::function<void()> callback);
     void setSwitchStateChangedCallback(std::function<void(SwitchId, SwitchState)> callback);
     void setButtonStateChangedCallback(std::function<void(ButtonId, ButtonState)> callback);
+    void setTrimStateChangedCallback(std::function<void(int, TrimState)> callback);
     void setRcActiveChangedCallback(std::function<void()> callback);
     void setCalibrationCompleteChangedCallback(std::function<void()> callback);
     void setCalibrationStateChangedCallback(std::function<void()> callback);
@@ -301,6 +308,7 @@ private:
     std::function<void()>   _pairCommandCallback = nullptr;
     std::function<void(SwitchId, SwitchState)> _switchStateChangedCallback = nullptr;
     std::function<void(ButtonId, ButtonState)> _buttonStateChangedCallback = nullptr;
+    std::function<void(int, TrimState)> _trimStateChangedCallback = nullptr;
     std::function<void()> _rcActiveChangedCallback = nullptr;
     std::function<void()> _calibrationCompleteChangedCallback = nullptr;
     std::function<void()> _calibrationStateChangedCallback = nullptr;

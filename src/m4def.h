@@ -308,6 +308,10 @@ enum {
         ACTION_TYPE_FEEDBACK            = 3,
         ACTION_TYPE_ONEKEY_TAKEOFF      = 6,
 
+        TRIM_T1                         = 21,
+        TRIM_T2                         = 22,
+        TRIM_T3                         = 23,
+        TRIM_T4                         = 24,
         SWITCH_OBS                      = 33,
         SWITCH_MODE                     = 34,
         BUTTON_POWER                    = 51,
