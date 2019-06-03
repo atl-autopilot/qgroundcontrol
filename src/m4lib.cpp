@@ -206,6 +206,12 @@ M4Lib::setButtonStateChangedCallback(std::function<void(ButtonId, ButtonState)> 
 }
 
 void
+M4Lib::setTrimStateChangedCallback(std::function<void(int, TrimState)> callback)
+{
+    _trimStateChangedCallback = callback;
+}
+
+void
 M4Lib::setRcActiveChangedCallback(std::function<void()> callback)
 {
     _rcActiveChangedCallback = callback;
@@ -1725,8 +1731,8 @@ M4Lib::_switchChanged(m4Packet& packet)
     std::vector<uint8_t> commandValues = packet.commandValues();
     SwitchChanged switchChanged;
     switchChanged.hwId      = int(commandValues[0]);
-    switchChanged.newState  = int(commandValues[2]); // This was previously mixed up with oldState
-    //switchChanged.oldState  = (int)commandValues[1]; // Unused.
+    switchChanged.newState  = int8_t(commandValues[2]); // This was previously mixed up with oldState
+    switchChanged.oldState  = int8_t(commandValues[1]); // Unused.
 
     switch (switchChanged.hwId) {
         case Yuneec::SWITCH_OBS:
@@ -1802,6 +1808,21 @@ M4Lib::_switchChanged(m4Packet& packet)
                 } else {
                     _buttonStateChangedCallback(ButtonId::VIDEO_SHUTTER, ButtonState::NORMAL);
                     _helper.logDebug("Video button normal");
+                }
+            }
+            break;
+        case Yuneec::TRIM_T1:
+        case Yuneec::TRIM_T2:
+        case Yuneec::TRIM_T3:
+        case Yuneec::TRIM_T4: {
+                if (_trimStateChangedCallback) {
+                    if (switchChanged.newState == 1) {
+                        _trimStateChangedCallback(switchChanged.hwId, TrimState::INCREASE_PRESSED);
+                    } else if (switchChanged.newState == -1) {
+                        _trimStateChangedCallback(switchChanged.hwId, TrimState::DECREASE_PRESSED);
+                    } else if (switchChanged.newState == 0) {
+                        _trimStateChangedCallback(switchChanged.hwId, TrimState::RELEASED);
+                    }
                 }
             }
             break;
