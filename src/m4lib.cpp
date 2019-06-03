@@ -1807,9 +1807,6 @@ M4Lib::_switchChanged(m4Packet& packet)
         case Yuneec::TRIM_T2:
         case Yuneec::TRIM_T3:
         case Yuneec::TRIM_T4: {
-                std::stringstream ssss;
-                ssss << "trim event: " << switchChanged.hwId << " - " << switchChanged.oldState << " - " << switchChanged.newState;
-                _helper.logWarn(ssss.str());
                 if (_trimStateChangedCallback) {
                     if (switchChanged.newState == 1) {
                         _trimStateChangedCallback(switchChanged.hwId, TrimState::INCREASE_PRESSED);
