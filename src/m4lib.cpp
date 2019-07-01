@@ -67,7 +67,7 @@ M4Lib::M4Lib(
     , _rcActive(false)
     , _rcCalibrationComplete(true)
     , _vehicleConnected(false)
-    , _slaveMode(false)
+    , _simulationMode(false)
     , _m4Version(-1)
     , _initChannelMappingState(InitChannelState::NONE)
     #ifdef DISABLE_ZIGBEE
@@ -158,7 +158,7 @@ M4Lib::setRcActive(bool rcActive)
     }
 
     //-- This means there was a RC timeout while the vehicle was connected.
-    if (!rcActive && _vehicleConnected && !_slaveMode) {
+    if (!rcActive && _vehicleConnected && !_simulationMode) {
         //-- If we are in run state after binding and we don't have RC, bind it again.
         if (_vehicleConnected && _softReboot && _m4State == M4State::RUN) {
             _softReboot = false;
@@ -321,9 +321,9 @@ M4Lib::_resetBindedId()
 }
 
 void
-M4Lib::enterSlaveMode()
+M4Lib::enterSimulation()
 {
-    _slaveMode = true;
+    _simulationMode = true;
 //If we disable zigbee, we don't need to do anything for entering slave mode.
 #ifndef DISABLE_ZIGBEE
     //If we would to make m4 enter simulate state to enable mixed channel,
@@ -334,9 +334,9 @@ M4Lib::enterSlaveMode()
 }
 
 void
-M4Lib::exitSlaveMode()
+M4Lib::exitSimulation()
 {
-    _slaveMode = false;
+    _simulationMode = false;
 #ifndef DISABLE_ZIGBEE
     _m4IntentState = M4State::RUN;
     _exitToAwait();
@@ -346,7 +346,7 @@ M4Lib::exitSlaveMode()
 void
 M4Lib::enterBindMode(bool skipPairCommand)
 {
-    if(_slaveMode) {
+    if(_simulationMode) {
         _helper.logWarn("enterBindMode() called while in slave mode.");
         return;
     }
@@ -386,7 +386,7 @@ M4Lib::_tryEnterBindMode()
 void
 M4Lib::checkVehicleReady()
 {
-    if (_slaveMode) {
+    if (_simulationMode) {
         if (_m4IntentState != M4State::SIM) {
             _m4IntentState = M4State::SIM;
             _exitToAwait();
