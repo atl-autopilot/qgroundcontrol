@@ -182,8 +182,8 @@ public:
 
     void setVehicleConnected(bool vehicleConnected);
 
-    std::vector<uint16_t> getRawChannels();
-    std::vector<uint16_t> getMixedChannels();
+    std::vector<uint16_t>& getRawChannels();
+    std::vector<uint16_t>& getMixedChannels();
 
     const ControllerLocation& getControllerLocation();
 
