@@ -194,8 +194,8 @@ public:
     void resetBind();
     void enterBindMode(bool skipPairCommand = false);
 
-    void enterSimulation ();           //disable zigbee send rc
-    void exitSimulation  ();           //enable zigbee send rc
+    void enterSlaveMode ();
+    void exitSlaveMode  ();
 
     bool isVehicleReady();
     void checkVehicleReady();
@@ -334,7 +334,7 @@ private:
     uint16_t                _rawChannelsCalibration[CalibrationHwIndexMax];
     bool                    _rcCalibrationComplete;
     bool                    _vehicleConnected;
-    bool                    _simulationMode;
+    bool                    _slaveMode;
     std::vector<uint16_t>   _rawChannels;
     std::vector<uint16_t>   _mixedChannels;
     ControllerLocation      _controllerLocation;
