@@ -68,6 +68,8 @@ M4Lib::M4Lib(
     , _rcCalibrationComplete(true)
     , _vehicleConnected(false)
     , _slaveMode(false)
+    , _rawChannels(10, 2048)
+    , _mixedChannels(12, 2048)
     , _m4Version(-1)
     , _initChannelMappingState(InitChannelState::NONE)
     #ifdef DISABLE_ZIGBEE
@@ -122,13 +124,13 @@ M4Lib::setVehicleConnected(bool vehicleConnected)
     _vehicleConnected = vehicleConnected;
 }
 
-std::vector<uint16_t>
+std::vector<uint16_t>&
 M4Lib::getRawChannels()
 {
     return _rawChannels;
 }
 
-std::vector<uint16_t>
+std::vector<uint16_t>&
 M4Lib::getMixedChannels()
 {
     return _mixedChannels;
@@ -1883,9 +1885,8 @@ void
 M4Lib::_handleRawChannelData(m4Packet& packet)
 {
     std::vector<uint8_t> values = packet.commandValues();
-    int analogChannelCount = _rxBindInfoFeedback.aNum  ? _rxBindInfoFeedback.aNum  : 10;
+    int analogChannelCount = 10;
     int val1, val2;
-    _rawChannels.clear();
     for(int i = 0; i < analogChannelCount; i++) {
         uint16_t value = 0;
         unsigned int index = static_cast<unsigned int>(std::floor(i * 1.5));
@@ -1899,10 +1900,9 @@ M4Lib::_handleRawChannelData(m4Packet& packet)
         } else {
             value = static_cast<uint16_t>((val1 & 0x0f) << 8 | val2);
         }
-        _rawChannels.push_back(value);
+        _rawChannels[i] = value;
     }
-    if (_rawChannelsChangedCallback
-            && (_rawChannels.size() == static_cast<unsigned int>(analogChannelCount))) {
+    if (_rawChannelsChangedCallback) {
         _rawChannelsChangedCallback();
     }
 #if 0
@@ -1924,7 +1924,6 @@ void
 M4Lib::_handleMixedChannelData(m4Packet& packet)
 {
     std::vector<uint8_t> values = packet.commandValues();
-    _mixedChannels.clear();
     int analogChannelCount = 10;
     int switchChannelCount = 2;
     unsigned int value, val1, val2;
@@ -1965,10 +1964,9 @@ M4Lib::_handleMixedChannelData(m4Packet& packet)
                     break;
             }
         }
-        _mixedChannels.push_back(static_cast<uint16_t>(value));
+        _mixedChannels[i] = static_cast<uint16_t>(value);
     }
-    if(_mixedChannelsChangedCallback
-            && (_mixedChannels.size() == static_cast<unsigned int>(analogChannelCount + switchChannelCount))) {
+    if(_mixedChannelsChangedCallback) {
         _mixedChannelsChangedCallback();
     }
 #if 0
