@@ -160,7 +160,6 @@ public:
     void setSwitchStateChangedCallback(std::function<void(SwitchId, SwitchState)> callback);
     void setButtonStateChangedCallback(std::function<void(ButtonId, ButtonState)> callback);
     void setTrimStateChangedCallback(std::function<void(int, TrimState)> callback);
-    void setRcActiveChangedCallback(std::function<void()> callback);
     void setCalibrationCompleteChangedCallback(std::function<void()> callback);
     void setCalibrationStateChangedCallback(std::function<void()> callback);
     void setRawChannelsChangedCallback(std::function<void()> callback);
@@ -175,34 +174,23 @@ public:
 
     M4State getM4State();
 
-    bool getRcActive();
-    void setRcActive(bool rcActive);
-
     bool getRcCalibrationComplete();
-
-    void setVehicleConnected(bool vehicleConnected);
 
     std::vector<uint16_t>& getRawChannels();
     std::vector<uint16_t>& getMixedChannels();
 
     const ControllerLocation& getControllerLocation();
 
-    // TODO: Check if we really don't need this.
-    //       If possible we don't want to leak this information.
-    //bool getSoftReboot() { return _softReboot; }
-
     void resetBind();
-    void enterBindMode(bool skipPairCommand = false);
+    void enterBindMode(bool enableZigbee, bool skipPairCommand);
 
     void enterSlaveMode ();
     void exitSlaveMode  ();
 
     bool isVehicleReady();
-    void checkVehicleReady();
+    void checkVehicleReady(bool enableZigbee);
     void tryStartCalibration();
     void tryStopCalibration();
-
-    void softReboot();
 
     std::string m4StateStr();
 
@@ -309,7 +297,6 @@ private:
     std::function<void(SwitchId, SwitchState)> _switchStateChangedCallback = nullptr;
     std::function<void(ButtonId, ButtonState)> _buttonStateChangedCallback = nullptr;
     std::function<void(int, TrimState)> _trimStateChangedCallback = nullptr;
-    std::function<void()> _rcActiveChangedCallback = nullptr;
     std::function<void()> _calibrationCompleteChangedCallback = nullptr;
     std::function<void()> _calibrationStateChangedCallback = nullptr;
     std::function<void()> _rawChannelsChangedCallback = nullptr;
@@ -329,21 +316,14 @@ private:
     uint8_t                 _rxLocalIndex;
     uint8_t                 _rxchannelInfoIndex;
     bool                    _sendRxInfoEnd;
-    bool                    _softReboot;
-    bool                    _rcActive;
     uint16_t                _rawChannelsCalibration[CalibrationHwIndexMax];
     bool                    _rcCalibrationComplete;
-    bool                    _vehicleConnected;
     bool                    _slaveMode;
     std::vector<uint16_t>   _rawChannels;
     std::vector<uint16_t>   _mixedChannels;
     ControllerLocation      _controllerLocation;
     int                     _m4Version;
     InitChannelState        _initChannelMappingState;
-
-#ifdef DISABLE_ZIGBEE
-    bool                    _skipBind;
-#endif
 
 #endif // defined(__androidx86__)
 };
