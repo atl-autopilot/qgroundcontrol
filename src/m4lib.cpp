@@ -64,17 +64,12 @@ M4Lib::M4Lib(
     , _currentChannelAdd(0)
     , _rxLocalIndex(0)
     , _sendRxInfoEnd(false)
-    , _rcActive(false)
     , _rcCalibrationComplete(true)
-    , _vehicleConnected(false)
     , _slaveMode(false)
     , _rawChannels(10, 2048)
     , _mixedChannels(12, 2048)
     , _m4Version(-1)
     , _initChannelMappingState(InitChannelState::NONE)
-    #ifdef DISABLE_ZIGBEE
-    , _skipBind(false)
-    #endif
 {
     _commPort = new M4SerialComm(_helper);
     _commPort->setBytesReadyCallback(std::bind(&M4Lib::_bytesReady, this, std::placeholders::_1));
@@ -84,11 +79,6 @@ M4Lib::M4Lib(
 
     _timer.setCallback(std::bind(&M4Lib::_stateManager, this));
     std::memset(_rawChannelsCalibration, 0, sizeof(_rawChannelsCalibration));
-
-    //-- We don't use zigbee in some projects, so skip binding zigbee.
-    #ifdef DISABLE_ZIGBEE
-    _skipBind = true;
-    #endif
 }
 
 M4Lib::~M4Lib()
@@ -107,21 +97,9 @@ M4Lib::getM4State()
 }
 
 bool
-M4Lib::getRcActive()
-{
-    return _rcActive;
-}
-
-bool
 M4Lib::getRcCalibrationComplete()
 {
     return _rcCalibrationComplete;
-}
-
-void
-M4Lib::setVehicleConnected(bool vehicleConnected)
-{
-    _vehicleConnected = vehicleConnected;
 }
 
 std::vector<uint16_t>&
@@ -140,34 +118,6 @@ const M4Lib::ControllerLocation&
 M4Lib::getControllerLocation()
 {
     return _controllerLocation;
-}
-
-void
-M4Lib::setRcActive(bool rcActive)
-{
-    if (_rcActive != rcActive) {
-        _rcActive = rcActive;
-        if (_rcActiveChangedCallback) {
-            _rcActiveChangedCallback();
-        }
-    }
-
-    if (rcActive) {
-        //-- If we were in softReboot, we can exit now because we have received RC.
-        if (_softReboot) {
-            _softReboot = false;
-        }
-    }
-
-    //-- This means there was a RC timeout while the vehicle was connected.
-    if (!rcActive && _vehicleConnected && !_slaveMode) {
-        //-- If we are in run state after binding and we don't have RC, bind it again.
-        if (_vehicleConnected && _softReboot && _m4State == M4State::RUN) {
-            _softReboot = false;
-            _helper.logInfo("RC bind again");
-            enterBindMode();
-        }
-    }
 }
 
 void
@@ -211,12 +161,6 @@ void
 M4Lib::setTrimStateChangedCallback(std::function<void(int, TrimState)> callback)
 {
     _trimStateChangedCallback = callback;
-}
-
-void
-M4Lib::setRcActiveChangedCallback(std::function<void()> callback)
-{
-    _rcActiveChangedCallback = callback;
 }
 
 void
@@ -326,43 +270,35 @@ void
 M4Lib::enterSlaveMode()
 {
     _slaveMode = true;
-//If we disable zigbee, we don't need to do anything for entering slave mode.
-#ifndef DISABLE_ZIGBEE
     //If we would to make m4 enter simulate state to enable mixed channel,
     //we can set "_m4IntentState" to "M4State::SIM".
     _m4IntentState = M4State::SIM;
     _exitToAwait();
-#endif
 }
 
 void
 M4Lib::exitSlaveMode()
 {
     _slaveMode = false;
-#ifndef DISABLE_ZIGBEE
     _m4IntentState = M4State::RUN;
     _exitToAwait();
-#endif
 }
 
 void
-M4Lib::enterBindMode(bool skipPairCommand)
+M4Lib::enterBindMode(bool enableZigbee, bool skipPairCommand)
 {
     if(_slaveMode) {
         _helper.logWarn("enterBindMode() called while in slave mode.");
         return;
     }
+
+    if (!enableZigbee) {
+        _helper.logWarn("enterBindMode() called while disable zigbee.");
+        return;
+    }
+
     std::stringstream ss;
     ss << "enterBindMode() Current Mode: " << int(_m4State);
-
-//-- TODO:skip binding zigbee
-#ifdef DISABLE_ZIGBEE
-    if(_skipBind) {
-       _helper.logDebug("Binding is not required, skip");
-       return;
-    }
-#endif
-
     _helper.logInfo(ss.str());
     if(!skipPairCommand) {
         if (!_pairCommandCallback) {
@@ -372,7 +308,9 @@ M4Lib::enterBindMode(bool skipPairCommand)
 
         _pairCommandCallback();
     }
-    _tryEnterBindMode();
+    if (_m4IntentState != M4State::BIND) {
+        _tryEnterBindMode();
+    }
 }
 
 void
@@ -386,7 +324,7 @@ M4Lib::_tryEnterBindMode()
 }
 
 void
-M4Lib::checkVehicleReady()
+M4Lib::checkVehicleReady(bool enableZigbee)
 {
     if (_slaveMode) {
         if (_m4IntentState != M4State::SIM) {
@@ -395,12 +333,12 @@ M4Lib::checkVehicleReady()
         }
     }else {
         if (_m4IntentState != M4State::RUN && _m4IntentState != M4State::BIND) {
-            enterBindMode(false);
+            enterBindMode(enableZigbee, false);
             return;
         }
 
         if (_rxBindInfoFeedback.nodeId == 0) {
-            enterBindMode(false);
+            enterBindMode(enableZigbee, false);
         }
     }
 }
@@ -430,36 +368,6 @@ M4Lib::tryStopCalibration()
         _m4IntentState = M4State::RUN;
         _exitToAwait();
     }
-}
-
-
-void
-M4Lib::softReboot()
-{
-#if defined(__androidx86__)
-    _helper.logInfo("softReboot()");
-    if(_rcActive) {
-        _helper.logDebug("softReboot() -> Already bound. Skipping it...");
-    } else {
-        deinit();
-        _helper.msleep(SEND_INTERVAL);
-        _internalM4State    = InternalM4State::NONE;
-        _responseTryCount   = 0;
-        _currentChannelAdd  = 0;
-        _m4State            = M4State::NONE;
-        _m4IntentState      = M4State::RUN;
-        _rxLocalIndex       = 0;
-        _sendRxInfoEnd      = false;
-        _rxchannelInfoIndex = 2;
-        _channelNumIndex    = 6;
-        _resetBindedId();
-        init();
-    }
-    // We want to recheck if we are really bound, so we set RC inactive and wait to
-    // to get notified about RC being active again.
-    setRcActive(false);
-    _softReboot = true;
-#endif
 }
 
 /**
@@ -981,12 +889,8 @@ M4Lib::_initSequence()
             _internalM4State = InternalM4State::ENTER_RUN;
             _enterRun();
         }else {
-            _internalM4State = InternalM4State::RECV_RAW_CH_ONLY;
-#ifdef DISABLE_ZIGBEE
+            _internalM4State = InternalM4State::RECV_BOTH_CH;
             _sendRecvBothCh();
-#else
-            _sendRecvRawCh();
-#endif
         }
         _timer.start(COMMAND_WAIT_INTERVAL);
         break;
@@ -1151,11 +1055,7 @@ M4Lib::_stateManager()
             break;
         case InternalM4State::RECV_RAW_CH_ONLY:
             _helper.logInfo("CMD_RECV_RAW_CH_ONLY Timeout");
-#ifdef DISABLE_ZIGBEE
-            _sendRecvBothCh();
-#else
             _sendRecvRawCh();
-#endif
             _timer.start(COMMAND_WAIT_INTERVAL);
             break;
         case InternalM4State::SEND_RX_INFO:

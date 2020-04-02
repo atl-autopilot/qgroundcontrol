@@ -33,10 +33,3 @@ mkdir build && cd build
 cmake ..
 make
 ```
-
-To build for newer models with OFDM support, use:
-```
-mkdir build && cd build
-cmake -DZIGBEE:STRING=DISABLE_ZIGBEE ..
-make
-```
