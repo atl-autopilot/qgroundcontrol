@@ -1883,7 +1883,7 @@ void
 M4Lib::_handleControllerFeedback(m4Packet& packet)
 {
     std::vector<uint8_t> commandValues = packet.commandValues();
-    if (commandValues.size() < 26) {
+    if (commandValues.size() < 19) {
         _helper.logWarn("Controller GPS feedback package not completely.");
         return;
     }
@@ -1903,12 +1903,14 @@ M4Lib::_handleControllerFeedback(m4Packet& packet)
     _controllerLocation.heading      = _byteArrayToShort(commandValues, 16);
     _controllerLocation.satelliteCount = commandValues[18] & 0x1f;
 
-    _controllerLocation.year  = _byteArrayToShort(commandValues, 19);
-    _controllerLocation.month = commandValues[21];
-    _controllerLocation.day   = commandValues[22];
-    _controllerLocation.hour  = commandValues[23];
-    _controllerLocation.min   = commandValues[24];
-    _controllerLocation.sec   = commandValues[25];
+    if (commandValues.size() > 25) {
+        _controllerLocation.year  = _byteArrayToShort(commandValues, 19);
+        _controllerLocation.month = commandValues[21];
+        _controllerLocation.day   = commandValues[22];
+        _controllerLocation.hour  = commandValues[23];
+        _controllerLocation.min   = commandValues[24];
+        _controllerLocation.sec   = commandValues[25];
+    }
 
     if (_controllerLocationChangedCallback) {
         _controllerLocationChangedCallback();
