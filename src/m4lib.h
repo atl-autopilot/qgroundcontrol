@@ -112,6 +112,13 @@ public:
          * Heading of movement of remote-controller in degrees [-180..180].
          */
         float heading = 0.0f;
+
+        unsigned short year   = 1970;
+        unsigned char  month  = 01;
+        unsigned char  day    = 01;
+        unsigned char  hour   = 0;
+        unsigned char  min    = 0;
+        unsigned char  sec    = 0;
     };
 
     enum class SwitchId {
