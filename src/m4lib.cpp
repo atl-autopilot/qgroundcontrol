@@ -14,6 +14,7 @@
 
 // RC Channel data provided by Yuneec
 #include "m4channeldata.h"
+#include "QGCApplication.h"
 
 static const char* kUartName        = "/dev/ttyMFD0";
 
@@ -191,6 +192,59 @@ void
 M4Lib::setVersionCallback(std::function<void(int, int, int)> callback)
 {
     _versionCallback = callback;
+}
+
+void
+M4Lib::startUpdateM4(std::string & firmwarePath, std::function<void(bool, std::string &)> updateCallback)
+{
+    _m4UpdateCallback = updateCallback;
+
+    if (firmwarePath.empty()) {
+        qWarning() << "No firmware was specified";
+        return;
+    }
+    QString path = QString::fromStdString(firmwarePath);
+    QFile m4file (path);
+    if (m4file.open(QFile::ReadOnly)) {
+        qWarning() << ". Success open filename" << m4file.fileName();
+    } else {
+        qWarning() << ". Fail open filename" << m4file.fileName();
+        return;
+    }
+
+    _enterUpdateM4();
+
+    //wait for 200ms
+
+    FirmwareSegment segment = {0};
+    segment.seg_id = 1;
+    int n = 1;
+    while (n > 0) {
+        QByteArray bytes = m4file.read(sizeof(segment.buffer));
+        for(uint8_t i = 0; i < sizeof(segment.buffer); i++){
+            segment.buffer[i] = (uint8_t)bytes[i];
+        }
+        n = bytes.size();
+        if (!n) {
+            break;
+        }
+        if ( n != sizeof(sizeof(segment.buffer))) {
+            qWarning() << "actual size %d is not matched with the expected size %d,n= " << sizeof(segment.buffer);
+        }
+        uint8_t retryTimes = 0;
+        while (1) {
+            _updateM4Going(segment);
+            if(_waitM4Ack(segment.seg_id) == false){
+
+            }else{
+                break;
+            }
+        }
+        memset(segment.buffer, 0, sizeof(segment.buffer));
+        segment.seg_id++;
+    }
+    m4file.close();
+    _exitUpdateM4();
 }
 
 bool
@@ -740,7 +794,6 @@ M4Lib::_sendTableDeviceChannelInfo(TableDeviceChannelInfo_t channelInfo)
 #endif
     return _write(cmd, DEBUG_DATA_DUMP);
 }
-
 /**
  * This funtion is used for sending the Channel number information to aircraft
  * Channel information such as structure TableDeviceChannelNumInfo_t
@@ -1108,6 +1161,47 @@ M4Lib::_sendRxResInfo()
     }
     _sendRxInfoEnd = true;
     return _sendRxInfoEnd;
+}
+
+bool
+M4Lib::_enterUpdateM4()
+{
+    _helper.logDebug("Sending: CMD_UPDATE_M4_START");
+     m4Command enterRunCmd(Yuneec::CMD_UPDATE_M4_START);
+     std::vector<uint8_t> cmd = enterRunCmd.pack();
+     return _write(cmd, DEBUG_DATA_DUMP);
+}
+bool
+M4Lib::_updateM4Going(FirmwareSegment firmware)
+{
+    _helper.logDebug("Sending: CMD_UPDATE_M4_GOING");
+    m4Command enterRunCmd(Yuneec::CMD_UPDATE_M4_GOING);
+
+    std::vector<uint8_t> payload;
+    unsigned int len = sizeof(firmware);
+    payload.resize(len);
+    std::fill(payload.begin(), payload.end(), 0);
+    payload[0] = uint8_t(firmware.seg_id & 0xff);
+    payload[1] = uint8_t((firmware.seg_id & 0xff00) >> 8);
+    for (uint8_t n = 0; n < sizeof(firmware.buffer); n++) {
+        payload[n + 2] = firmware.buffer[n];
+    }
+
+    std::vector<uint8_t> cmd = enterRunCmd.pack(payload);
+    return _write(cmd, DEBUG_DATA_DUMP);
+}
+bool
+M4Lib::_waitM4Ack(uint16_t packet_id)
+{
+
+}
+bool
+M4Lib::_exitUpdateM4()
+{
+    _helper.logDebug("Sending: CMD_UPDATE_TX_COMPLETED");
+     m4Command enterRunCmd(Yuneec::CMD_UPDATE_TX_COMPLETED);
+     std::vector<uint8_t> cmd = enterRunCmd.pack();
+     return _write(cmd, DEBUG_DATA_DUMP);
 }
 
 /**

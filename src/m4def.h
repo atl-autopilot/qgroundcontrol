@@ -114,6 +114,19 @@ enum {
      */
         CMD_GET_M4_VERSION = 0x93,
 
+    /**
+     * Command ID of {@link com.yuneec.droneservice.command.common.UpdateM4Start}
+     * <p/>
+     * Value is {@value}
+     */
+        CMD_UPDATE_M4_START = 0x99,
+
+    /**
+     * Command ID of {@link com.yuneec.droneservice.command.common.UpdateM4Going}
+     * <p/>
+     * Value is {@value}
+     */
+        CMD_UPDATE_M4_GOING = 0x9A,
 
     /**
      * Command ID of {@link com.yuneec.droneservice.command.common.UpdateTxCompleted}

@@ -8,7 +8,6 @@
 #include <functional>
 #include <vector>
 
-
 // In order to use M4Lib, this interface needs to be implemented
 // and injected when constructing M4Lib.
 class TimerInterface {
@@ -159,6 +158,11 @@ public:
         FINISH
     };
 
+    typedef struct {
+        uint16_t seg_id;
+        uint8_t  buffer[48];
+    }FirmwareSegment;
+
     void init();
     void deinit();
 
@@ -179,6 +183,7 @@ public:
     void setSaveSettingsCallback(std::function<void(const RxBindInfo& rxBindInfo, int rxBindInfoCrc)> callback);
     void setSettings(const RxBindInfo& rxBindInfo, int storageCrc);
     void setVersionCallback(std::function<void(int, int, int)> callback);
+    void startUpdateM4(std::string & firmwarePath, std::function<void(bool, std::string &)> updateCallback);
 
     void tryRead();
 
@@ -243,6 +248,10 @@ private:
     bool _sendTableDeviceChannelInfo(TableDeviceChannelInfo_t channelInfo);
     bool _sendTableDeviceChannelNumInfo(ChannelNumType_t channelNumType);
     bool _sendRxResInfo();
+    bool _enterUpdateM4();
+    bool _updateM4Going(FirmwareSegment firmware);
+    bool _waitM4Ack(uint16_t packet_id);
+    bool _exitUpdateM4();
 
     bool _sendPassthroughMessage(std::vector<uint8_t> message);
 
@@ -316,6 +325,8 @@ private:
     std::function<void(const RxBindInfo&, int rxBindInfoCrc)> _saveSettingsCallback = nullptr;
     // A version of -1.-1.-1 means the request timed out.
     std::function<void(int, int, int)> _versionCallback = nullptr;
+    std::function<void(bool, std::string &)> _m4UpdateCallback = nullptr;
+
     int                     _responseTryCount;
     M4State                 _m4State;
     M4State                 _m4IntentState;
